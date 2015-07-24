@@ -247,12 +247,12 @@ class BaseMethodIntrospector(object):
             self.callback,
             self.get_docs() or self.parent.get_description())
 
-    def get_nickname(self):
-        """ Returns the APIView's nickname """
+    def get_operation_id(self):
+        """ Returns the APIView's operationId """
         return rest_framework.settings.api_settings \
             .VIEW_NAME_FUNCTION(self.callback, self.method).replace(' ', '_')
 
-    def get_notes(self):
+    def get_description(self):
         """
         Returns the body of the docstring trimmed before any parameters are
         listed. First, get the class docstring and then get the method's. The
