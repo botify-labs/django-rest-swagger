@@ -34,10 +34,11 @@ class DocumentationGenerator(object):
     def get_root(self, endpoints_conf):
         return {
             'swagger': '2.0',
-            'paths': self.get_paths(endpoints_conf),
             'info': rfs.SWAGGER_SETTINGS.get('info', {
                 'contact': '',
             }),
+            'paths': self.get_paths(endpoints_conf),
+            # 'definitions': self.get_definitions(endpoints_conf),
         }
 
     def get_paths(self, endpoints_conf):
@@ -49,6 +50,7 @@ class DocumentationGenerator(object):
                      self.get_operations(api_endpoint, introspector)}
         method_introspectors = self.get_method_introspectors(api_endpoint, introspector)
         # @TODO : We might not have any method introspectors ?
+        # we get the main parameters (common to all operations) from the first view operation
         doc_parser = method_introspectors[0].get_yaml_parser()
         path_item['parameters'] = doc_parser.discover_parameters(inspector=method_introspectors[0])
         return path_item
@@ -76,13 +78,11 @@ class DocumentationGenerator(object):
                 'description': method_introspector.get_description(),
                 'summary': method_introspector.get_summary(),
                 'operationId': method_introspector.get_operation_id(),
-                'produces': [  # @TODO
-                    'application/json',
-                    'text/html'
-                ],
-                'externalDocs': 'TODO',
-                'tags': 'TODO',
+                'produces': doc_parser.get_param(param_name='produces', default=rfs.SWAGGER_SETTINGS.get('produces')),
+                'externalDocs': doc_parser.get_param(param_name='externalDocs', default=''),
+                'tags': doc_parser.get_param(param_name='tags', default=[]),
                 'type': response_type,
+                'parameters': doc_parser.discover_querystring_parameters(inspector=method_introspector),
             }
 
             if doc_parser.yaml_error is not None:
@@ -110,15 +110,12 @@ class DocumentationGenerator(object):
         else:
             return APIViewIntrospector(callback, path, pattern, self.user)
 
-
-#################################################
-
-    def get_models(self, apis):
+    def get_definitions(self, endpoints_conf):
         """
         Builds a list of Swagger 'models'. These represent
         DRF serializers and their fields
         """
-        serializers = self._get_serializer_set(apis)
+        serializers = self._get_serializer_set(endpoints_conf)
         serializers.update(self.explicit_serializers)
         serializers.update(
             self._find_field_serializers(serializers)
@@ -171,6 +168,28 @@ class DocumentationGenerator(object):
         models.update(self.explicit_response_types)
         models.update(self.fields_serializers)
         return models
+
+    def _get_serializer_set(self, endpoints_conf):
+        """
+        Returns a set of serializer classes for a provided list
+        of APIs
+        """
+        serializers = set()
+
+        for endpoint in endpoints_conf:
+            introspector = self.get_introspector(endpoint)
+            for method_introspector in introspector:
+                serializer = self._get_method_serializer(method_introspector)
+                if serializer is not None:
+                    serializers.add(serializer)
+                extras = method_introspector.get_extra_serializer_classes()
+                for extra in extras:
+                    if extra is not None:
+                        serializers.add(extra)
+
+        return serializers
+
+#################################################
 
     def _get_method_serializer(self, method_inspector):
         """
@@ -225,26 +244,6 @@ class DocumentationGenerator(object):
                 return serializer_name
 
             return 'object'
-
-    def _get_serializer_set(self, apis):
-        """
-        Returns a set of serializer classes for a provided list
-        of APIs
-        """
-        serializers = set()
-
-        for api in apis:
-            introspector = self.get_introspector(api, apis)
-            for method_introspector in introspector:
-                serializer = self._get_method_serializer(method_introspector)
-                if serializer is not None:
-                    serializers.add(serializer)
-                extras = method_introspector.get_extra_serializer_classes()
-                for extra in extras:
-                    if extra is not None:
-                        serializers.add(extra)
-
-        return serializers
 
     def _find_field_serializers(self, serializers, found_serializers=set()):
         """
@@ -310,7 +309,7 @@ class DocumentationGenerator(object):
 
             description = getattr(field, 'help_text', '')
             if not description or description.strip() == '':
-                description = None
+                description = ""
             f = {
                 'description': description,
                 'type': data_type,

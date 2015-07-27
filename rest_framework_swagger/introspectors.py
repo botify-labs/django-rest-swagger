@@ -249,8 +249,10 @@ class BaseMethodIntrospector(object):
 
     def get_operation_id(self):
         """ Returns the APIView's operationId """
-        return rest_framework.settings.api_settings \
+        parser = self.get_yaml_parser()
+        default = rest_framework.settings.api_settings \
             .VIEW_NAME_FUNCTION(self.callback, self.method).replace(' ', '_')
+        return parser.object.get('operationId', default)
 
     def get_description(self):
         """
@@ -337,7 +339,7 @@ class BaseMethodIntrospector(object):
         return {
             'name': serializer_name,
             'type': serializer_name,
-            'paramType': 'body',
+            'in': 'body',
         }
 
     def build_path_parameters(self):
@@ -351,7 +353,7 @@ class BaseMethodIntrospector(object):
             params.append({
                 'name': param,
                 'type': 'string',
-                'paramType': 'path',
+                'in': 'path',
                 'required': True
             })
 
@@ -371,7 +373,7 @@ class BaseMethodIntrospector(object):
         for line in split_lines:
             param = line.split(' -- ')
             if len(param) == 2:
-                params.append({'paramType': 'query',
+                params.append({'in': 'query',
                                'name': param[0].strip(),
                                'description': param[1].strip(),
                                'type': 'string'})
@@ -389,7 +391,7 @@ class BaseMethodIntrospector(object):
             for name, filter_ in filter_class.base_filters.items():
                 data_type = 'string'
                 parameter = {
-                    'paramType': 'query',
+                    'in': 'query',
                     'name': name,
                     'description': filter_.label,
                 }
@@ -430,7 +432,7 @@ class BaseMethodIntrospector(object):
                 # data_format = self.PRIMITIVES.get(data_type)[0]
 
             f = {
-                'paramType': 'form',
+                'in': 'formData',
                 'name': name,
                 'description': getattr(field, 'help_text', '') or '',
                 'type': data_type,
@@ -653,14 +655,14 @@ class ViewSetMethodIntrospector(BaseMethodIntrospector):
             data_type = 'integer'
             if page_query_param:
                 parameters.append({
-                    'paramType': 'query',
+                    'in': 'query',
                     'name': page_query_param,
                     'description': None,
                 })
                 normalize_data_format(data_type, None, parameters[-1])
             if page_size_query_param:
                 parameters.append({
-                    'paramType': 'query',
+                    'in': 'query',
                     'name': page_size_query_param,
                     'description': None,
                 })
@@ -739,11 +741,11 @@ class YAMLDocstringParser(object):
               description: Foobar long description goes here
               required: true
               type: integer
-              paramType: form
+              in: form
               minimum: 10
               maximum: 100
             - name: other_foo
-              paramType: query
+              in: query
             - name: avatar
               type: file
 
@@ -751,7 +753,7 @@ class YAMLDocstringParser(object):
     defining:
         `parameters_strategy` option to either `merge` or `replace`
 
-    To define different strategies for different `paramType`'s use the
+    To define different strategies for different `in`'s use the
     following syntax:
         parameters_strategy:
             form: replace
@@ -762,7 +764,7 @@ class YAMLDocstringParser(object):
 
     Sometimes method inspector produces wrong list of parameters that
     you might not won't to see in SWAGGER form. To handle this situation
-    define `paramTypes` that should be omitted
+    define `ins` that should be omitted
         omit_parameters:
             - form
 
@@ -817,7 +819,7 @@ class YAMLDocstringParser(object):
     parameters:
         - name: CigarSerializer
           type: WriteCigarSerializer
-          paramType: body
+          in: body
 
 
     SAMPLE DOCSTRING:
@@ -850,11 +852,11 @@ class YAMLDocstringParser(object):
           description: Foobar long description goes here
           required: true
           type: string
-          paramType: form
+          in: form
         - name: other_foo
-          paramType: query
+          in: query
         - name: other_bar
-          paramType: query
+          in: query
         - name: avatar
           type: file
 
@@ -862,7 +864,7 @@ class YAMLDocstringParser(object):
         - code: 401
           message: Not authenticated
     """
-    PARAM_TYPES = ['header', 'path', 'form', 'body', 'query']
+    PARAM_TYPES = ['header', 'path', 'formData', 'body', 'query']
     yaml_error = None
 
     def __init__(self, method_introspector):
@@ -1014,16 +1016,16 @@ class YAMLDocstringParser(object):
             view_mocker = self._load_class(view_mocker, callback)
         return view_mocker
 
-    def get_parameters(self, callback):
+    def get_parameters(self, callback, docstring_param_name='parameters'):
         """
         Retrieves parameters from YAML object
         """
         params = []
-        fields = self.object.get('parameters', [])
+        fields = self.object.get(docstring_param_name, [])
         for field in fields:
-            param_type = field.get('paramType', None)
+            param_type = field.get('in', None)
             if param_type not in self.PARAM_TYPES:
-                param_type = 'form'
+                param_type = 'formData'
 
             # Data Type & Format
             # See:
@@ -1046,7 +1048,7 @@ class YAMLDocstringParser(object):
             data_format = field.get('format', None)
 
             f = {
-                'paramType': param_type,
+                'in': param_type,
                 'name': field.get('name', None),
                 'description': field.get('description', ''),
                 'required': field.get('required', False),
@@ -1087,7 +1089,7 @@ class YAMLDocstringParser(object):
 
             # File support
             if f['type'] == 'file':
-                f['paramType'] = 'body'
+                f['in'] = 'body'
 
             params.append(f)
 
@@ -1102,13 +1104,13 @@ class YAMLDocstringParser(object):
         docstring_params = self.get_parameters(inspector.callback)
         method_params = inspector.get_parameters()
 
-        # paramType may differ, overwrite first
+        # in may differ, overwrite first
         # so strategy can be applied
         for meth_param in method_params:
             for doc_param in docstring_params:
                 if doc_param['name'] == meth_param['name']:
-                    if 'paramType' in doc_param:
-                        meth_param['paramType'] = doc_param['paramType']
+                    if 'in' in doc_param:
+                        meth_param['in'] = doc_param['in']
 
         for param_type in self.PARAM_TYPES:
             if self.should_omit_parameters(param_type):
@@ -1120,10 +1122,13 @@ class YAMLDocstringParser(object):
         # PATCH requests expects all fields except path fields to be optional
         if inspector.get_http_method() == "PATCH":
             for param in parameters:
-                if param['paramType'] != 'path':
+                if param['in'] != 'path':
                     param['required'] = False
 
         return parameters
+
+    def discover_querystring_parameters(self, inspector):
+        return self.get_parameters(inspector.callback, docstring_param_name='querystring_parameters')
 
     def should_omit_parameters(self, param_type):
         """
@@ -1139,17 +1144,17 @@ class YAMLDocstringParser(object):
 
     def _apply_strategy(self, param_type, method_params, docstring_params):
         """
-        Applies strategy for subset of parameters filtered by `paramType`
+        Applies strategy for subset of parameters filtered by `in`
         """
         strategy = self.get_parameters_strategy(param_type=param_type)
         method_params = self._filter_params(
             params=method_params,
-            key='paramType',
+            key='in',
             val=param_type
         )
         docstring_params = self._filter_params(
             params=docstring_params,
-            key='paramType',
+            key='in',
             val=param_type
         )
 
@@ -1197,7 +1202,7 @@ class YAMLDocstringParser(object):
             - `replace` strategy completely overwrites parameters discovered
                 by inspector with the ones defined explicitly in docstring.
 
-        Note: Strategy can be defined per `paramType` so `path` parameters can
+        Note: Strategy can be defined per `in` so `path` parameters can
         use `merge` strategy while `form` parameters will use `replace`
         strategy.
 
@@ -1212,3 +1217,12 @@ class YAMLDocstringParser(object):
             strategy = default
 
         return strategy
+
+    def get_param(self, param_name, default):
+        """
+        :param param_name: lookup parameter
+        :type param_name: string
+        :param default: default value if parameter not found
+        :return : a single parameter found in the docstring
+        """
+        return self.object.get(param_name, default)
