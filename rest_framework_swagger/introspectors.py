@@ -400,7 +400,7 @@ class BaseMethodIntrospector(object):
                 if multiple_choices:
                     parameter['enum'] = [choice[0] for choice
                                          in itertools.chain(multiple_choices)]
-                    parameter['type'] = 'enum'
+                    # parameter['type'] = 'enum'
                 params.append(parameter)
 
         return params
@@ -482,7 +482,10 @@ def get_data_type(field):
     # elif isinstance(field, fields.SlugField):
         # return 'string', 'string', # 'slug'
     elif isinstance(field, fields.ChoiceField):
-        return 'choice', 'choice'
+        first_key = field.choices.keys()[0]
+        if isinstance(first_key, int):
+            return 'integer', 'int64'
+        return 'string', 'string'
     # elif isinstance(field, fields.EmailField):
         # return 'string', 'string' #  'email'
     # elif isinstance(field, fields.RegexField):
@@ -1000,14 +1003,16 @@ class YAMLDocstringParser(object):
         """
         Retrieves response error codes from YAML object
         """
-        messages = []
+        messages = {}
         response_messages = self.object.get('responseMessages', [])
         for message in response_messages:
-            messages.append({
-                'code': message.get('code', None),
-                'message': message.get('message', None),
-                'responseModel': message.get('responseModel', None),
-            })
+            data = {
+                'description': message.get('description', '')
+            }
+            schema = message.get('schema', None)
+            if schema:
+                data['schema'] = schema
+            messages[message.get('code')] = data
         return messages
 
     def get_view_mocker(self, callback):

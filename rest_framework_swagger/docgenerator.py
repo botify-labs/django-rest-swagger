@@ -38,7 +38,7 @@ class DocumentationGenerator(object):
                 'contact': '',
             }),
             'paths': self.get_paths(endpoints_conf),
-            # 'definitions': self.get_definitions(endpoints_conf),
+            'definitions': self.get_definitions(endpoints_conf)
         }
 
     def get_paths(self, endpoints_conf):
@@ -57,7 +57,8 @@ class DocumentationGenerator(object):
 
     def get_method_introspectors(self, api_endpoint, introspector):
         return [method_introspector for method_introspector in introspector if
-                isinstance(method_introspector, BaseMethodIntrospector) and not method_introspector.get_http_method() == "OPTIONS"]
+                isinstance(method_introspector, BaseMethodIntrospector)
+                and not method_introspector.get_http_method() == "OPTIONS"]
 
     def get_operations(self, api, introspector):
         """
@@ -79,9 +80,8 @@ class DocumentationGenerator(object):
                 'summary': method_introspector.get_summary(),
                 'operationId': method_introspector.get_operation_id(),
                 'produces': doc_parser.get_param(param_name='produces', default=rfs.SWAGGER_SETTINGS.get('produces')),
-                'externalDocs': doc_parser.get_param(param_name='externalDocs', default=''),
+                # 'externalDocs': doc_parser.get_param(param_name='externalDocs', default=''),
                 'tags': doc_parser.get_param(param_name='tags', default=[]),
-                'type': response_type,
                 'parameters': doc_parser.discover_querystring_parameters(inspector=method_introspector),
             }
 
@@ -90,9 +90,15 @@ class DocumentationGenerator(object):
                     err=doc_parser.yaml_error)
 
             response_messages = doc_parser.get_response_messages()
-
-            if response_messages:
-                operation['responseMessages'] = response_messages
+            response_messages['200'] = {
+                'description': 'Successful operation',
+                'schema': {
+                    '$ref': '#/definitions/' + response_type
+                } if response_type != 'object' else {
+                    'type': response_type
+                }
+            }
+            operation['responses'] = response_messages
 
             operations.append(operation)
 
@@ -140,10 +146,12 @@ class DocumentationGenerator(object):
                                        if k not in data['read_only'])
 
             models[w_name] = {
-                'id': w_name,
                 'required': [i for i in data['required'] if i in w_properties.keys()],
                 'properties': w_properties,
+                'type': 'object'
             }
+            if len(models[w_name]['required']) == 0:
+                del models[w_name]['required']
 
             # Reading
             # no write_only fields
@@ -153,17 +161,12 @@ class DocumentationGenerator(object):
                                        if k not in data['write_only'])
 
             models[r_name] = {
-                'id': r_name,
                 'required': [i for i in r_properties.keys()],
                 'properties': r_properties,
+                'type': 'object'
             }
-
-            # Enable original model for testing purposes
-            # models[serializer_name] = {
-            #     'id': serializer_name,
-            #     'required': data['required'],
-            #     'properties': data['fields'],
-            # }
+            if len(models[r_name]['required']) == 0:
+                del models[r_name]['required']
 
         models.update(self.explicit_response_types)
         models.update(self.fields_serializers)
@@ -314,7 +317,7 @@ class DocumentationGenerator(object):
                 'description': description,
                 'type': data_type,
                 'format': data_format,
-                'required': getattr(field, 'required', False),
+                # 'required': getattr(field, 'required', False),
                 'defaultValue': get_default_value(field),
                 'readOnly': getattr(field, 'read_only', None),
             }
@@ -357,7 +360,9 @@ class DocumentationGenerator(object):
                     if getattr(field, 'write_only', False):
                         field_serializer = "Write{}".format(field_serializer)
 
-                    f['type'] = field_serializer
+                    if not has_many:
+                        del f['type']
+                        f['$ref'] = '#/definitions/' + field_serializer
                 else:
                     field_serializer = None
                     data_type = 'string'
@@ -365,11 +370,10 @@ class DocumentationGenerator(object):
                 if has_many:
                     f['type'] = 'array'
                     if field_serializer:
-                        f['items'] = {'$ref': field_serializer}
+                        f['items'] = {'$ref': '#/definitions/' + field_serializer}
                     elif data_type in BaseMethodIntrospector.PRIMITIVES:
                         f['items'] = {'type': data_type}
 
             # memorize discovered field
             data['fields'][name] = f
-
         return data
