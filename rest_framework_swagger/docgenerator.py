@@ -60,13 +60,13 @@ class DocumentationGenerator(object):
                 isinstance(method_introspector, BaseMethodIntrospector)
                 and not method_introspector.get_http_method() == "OPTIONS"]
 
-    def get_operations(self, api, introspector):
+    def get_operations(self, api_endpoint, introspector):
         """
         Returns docs for the allowed methods of an API endpoint
         """
         operations = []
 
-        for method_introspector in self.get_method_introspectors(api, introspector):
+        for method_introspector in self.get_method_introspectors(api_endpoint, introspector):
             doc_parser = method_introspector.get_yaml_parser()
 
             serializer = self._get_method_serializer(method_introspector)
