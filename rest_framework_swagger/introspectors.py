@@ -7,6 +7,7 @@ import itertools
 import re
 import yaml
 import importlib
+import logging
 
 from .compat import OrderedDict, strip_tags, get_pagination_attribures
 from abc import ABCMeta, abstractmethod
@@ -24,6 +25,8 @@ try:
     import django_filters
 except ImportError:
     django_filters = None
+
+logger = logging.getLogger()
 
 
 def get_view_description(view_cls, html=False, docstring=None):
@@ -250,9 +253,15 @@ class BaseMethodIntrospector(object):
     def get_operation_id(self):
         """ Returns the APIView's operationId """
         parser = self.get_yaml_parser()
-        default = rest_framework.settings.api_settings \
-            .VIEW_NAME_FUNCTION(self.callback, self.method).replace(' ', '_')
-        return parser.object.get('operationId', default)
+        operation_id = parser.object.get('operationId', None)
+        if not operation_id:
+            logger.error("No operationId defined for path {} on method {}".format(
+                parser.method_introspector.path,
+                parser.method_introspector.method
+            ))
+            return None
+
+        return operation_id
 
     def get_description(self):
         """
