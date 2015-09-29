@@ -38,7 +38,8 @@ class DocumentationGenerator(object):
                 'contact': '',
             }),
             'paths': self.get_paths(endpoints_conf),
-            'definitions': self.get_definitions(endpoints_conf)
+            'definitions': self.get_definitions(endpoints_conf),
+            'securityDefinitions': rfs.SWAGGER_SETTINGS.get('securityDefinitions', {})
         }
 
     def get_paths(self, endpoints_conf):
