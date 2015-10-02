@@ -263,7 +263,7 @@ class BaseMethodIntrospector(object):
 
         return operation_id
 
-    def get_description(self):
+    def get_description(self, use_markdown=False):
         """
         Returns the body of the docstring trimmed before any parameters are
         listed. First, get the class docstring and then get the method's. The
@@ -289,7 +289,7 @@ class BaseMethodIntrospector(object):
             docstring += '\n' + method_docs
         docstring = docstring.strip()
 
-        return do_markdown(docstring)
+        return do_markdown(docstring) if use_markdown else docstring.replace("\n", " ")
 
     def get_parameters(self):
         """
