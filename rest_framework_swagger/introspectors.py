@@ -558,7 +558,7 @@ class GenericViewIntrospector(BaseViewIntrospector):
         """
         http_method = http_method.lower()
         if http_method == 'get':
-            return 'list' if isinstance(self.callback, ListModelMixin) else 'retrieve'
+            return 'list' if issubclass(self.callback, ListModelMixin) else 'retrieve'
         if http_method not in self.method_actions:
             return http_method
         return self.method_actions[http_method]
