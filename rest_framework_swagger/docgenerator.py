@@ -32,6 +32,13 @@ class DocumentationGenerator(object):
         self.user = for_user or AnonymousUser()
 
     def get_root(self, endpoints_conf):
+        self.default_response = rfs.SWAGGER_SETTINGS.get("default_response_format", None)
+        self.default_response_name = rfs.SWAGGER_SETTINGS.get("default_response_format_definition_name", "DefaultResponse")
+        if self.default_response:
+            self.explicit_response_types.update({
+                self.default_response_name: self.default_response
+            })
+
         return {
             'swagger': '2.0',
             'info': rfs.SWAGGER_SETTINGS.get('info', {
@@ -90,7 +97,18 @@ class DocumentationGenerator(object):
                 operation['notes'] += '<pre>YAMLError:\n {err}</pre>'.format(
                     err=doc_parser.yaml_error)
 
-            response_messages = doc_parser.get_response_messages()
+            response_messages = {}
+            # set default response reference
+            if self.default_response:
+                response_messages['default'] = {
+                    'schema': {
+                        '$ref': '#/definitions/' + self.default_response_name
+                    }
+                }
+
+            # overwrite default and add more responses from docstrings
+            response_messages.update(doc_parser.get_response_messages())
+
             response_messages['200'] = {
                 'description': 'Successful operation',
                 'schema': {
