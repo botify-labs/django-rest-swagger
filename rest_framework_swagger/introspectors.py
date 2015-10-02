@@ -20,6 +20,7 @@ import rest_framework
 from rest_framework import viewsets
 from rest_framework.compat import apply_markdown
 from rest_framework.utils import formatting
+from rest_framework.mixins import ListModelMixin
 from django.utils import six
 try:
     import django_filters
@@ -532,6 +533,52 @@ class APIViewIntrospector(BaseViewIntrospector):
         return self.callback().allowed_methods
 
 
+class GenericViewIntrospector(BaseViewIntrospector):
+    """
+    Instead of retrieving the information from the 'get', 'post', 'put', 'delete'
+    methods, we'll use (as we should) the 'list', 'retrieve', 'create', 'update' and
+    'destroy' methods of the view
+    """
+
+    method_actions = {
+        'post': 'create',
+        'put': 'update',
+        'delete': 'destroy'
+    }
+
+    def __iter__(self):
+        for http_method, action in self.methods().iteritems():
+            yield GenericViewMethodIntrospector(self, action, http_method)
+
+    def _get_action_from_http_method(self, http_method):
+        """
+        Gets the corresponding action name for the http_method.
+        Since a "GET" method can be a "list" or "retrieve" we'll check
+        if the view extends ListModelMixin to convert it
+        """
+        http_method = http_method.lower()
+        if http_method == 'get':
+            return 'list' if isinstance(self.callback, ListModelMixin) else 'retrieve'
+        if http_method not in self.method_actions:
+            return http_method
+        return self.method_actions[http_method]
+
+    def methods(self):
+        """
+        returns a map containing all available http methods for the view and
+        their corresponding view method name (action)
+        i.e.:
+            {
+                "post": "create",
+                "get": "list"
+            }
+        """
+        methods = {}
+        for http_method in self.callback().allowed_methods:
+            methods[http_method] = self._get_action_from_http_method(http_method)
+        return methods
+
+
 class WrappedAPIViewIntrospector(BaseViewIntrospector):
     def __iter__(self):
         for method in self.methods():
@@ -559,6 +606,24 @@ def do_markdown(docstring):
 
 
 class APIViewMethodIntrospector(BaseMethodIntrospector):
+    def get_docs(self):
+        """
+        Attempts to retrieve method specific docs for an
+        endpoint. If none are available, the class docstring
+        will be used
+        """
+        return self.retrieve_docstring()
+
+
+class GenericViewMethodIntrospector(BaseMethodIntrospector):
+
+    def __init__(self, view_introspector, action, http_method):
+        super(GenericViewMethodIntrospector, self).__init__(view_introspector, action)
+        self.http_method = http_method.upper()
+
+    def get_http_method(self):
+        return self.http_method
+
     def get_docs(self):
         """
         Attempts to retrieve method specific docs for an

@@ -4,10 +4,13 @@ import rest_framework
 import rest_framework_swagger as rfs
 
 from rest_framework import viewsets
+from rest_framework.generics import GenericAPIView
+
 from rest_framework.serializers import BaseSerializer
 
 from .introspectors import (
     APIViewIntrospector,
+    GenericViewIntrospector,
     BaseMethodIntrospector,
     IntrospectorHelper,
     ViewSetIntrospector,
@@ -54,8 +57,12 @@ class DocumentationGenerator(object):
 
     def get_path_item(self, api_endpoint):
         introspector = self.get_introspector(api_endpoint)
-        path_item = {operation.pop('method').lower(): operation for operation in
-                     self.get_operations(api_endpoint, introspector)}
+
+        path_item = {}
+
+        for operation in self.get_operations(api_endpoint, introspector):
+            path_item[operation.pop('method').lower()] = operation
+
         method_introspectors = self.get_method_introspectors(api_endpoint, introspector)
         # @TODO : We might not have any method introspectors ?
         # we get the main parameters (common to all operations) from the first view operation
@@ -132,6 +139,8 @@ class DocumentationGenerator(object):
         elif issubclass(callback, viewsets.ViewSetMixin):
             patterns = [api['pattern']]
             return ViewSetIntrospector(callback, path, pattern, self.user, patterns=patterns)
+        elif issubclass(callback, GenericAPIView):
+            return GenericViewIntrospector(callback, path, pattern, self.user)
         else:
             return APIViewIntrospector(callback, path, pattern, self.user)
 
