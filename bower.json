@@ -1,0 +1,11 @@
+{
+  "name": "Rest Swagger",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "components"
+  ],
+  "dependencies": {
+    "swagger-ui": "2.1.3"
+  }
+}
