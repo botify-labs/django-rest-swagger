@@ -13,6 +13,7 @@ DEFAULT_SWAGGER_SETTINGS = {
     'resource_access_handler': None,
     'template_path': 'rest_framework_swagger/index.html',
     'doc_expansion': 'none',
+    'base_path': ''
 }
 
 try:

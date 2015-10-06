@@ -19,6 +19,7 @@ from .introspectors import (
     get_default_value,
 )
 from .compat import OrderedDict
+from .utils import extract_base_path
 
 
 class DocumentationGenerator(object):
@@ -47,13 +48,19 @@ class DocumentationGenerator(object):
             'info': rfs.SWAGGER_SETTINGS.get('info', {
                 'contact': '',
             }),
+            'basePath': rfs.SWAGGER_SETTINGS.get("api_path", ''),
             'paths': self.get_paths(endpoints_conf),
             'definitions': self.get_definitions(endpoints_conf),
             'securityDefinitions': rfs.SWAGGER_SETTINGS.get('securityDefinitions', {})
         }
 
     def get_paths(self, endpoints_conf):
-        return {endpoint['path']: self.get_path_item(endpoint) for endpoint in endpoints_conf}
+        paths_dict = {}
+        for endpoint in endpoints_conf:
+            # remove the base_path from the begining of the path
+            endpoint['path'] = extract_base_path(endpoint['path'])
+            paths_dict[endpoint['path']] = self.get_path_item(endpoint)
+        return paths_dict
 
     def get_path_item(self, api_endpoint):
         introspector = self.get_introspector(api_endpoint)
