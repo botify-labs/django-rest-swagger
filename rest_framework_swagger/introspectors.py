@@ -348,8 +348,10 @@ class BaseMethodIntrospector(object):
 
         return {
             'name': serializer_name,
-            'type': serializer_name,
             'in': 'body',
+            'schema': {
+                "$ref": "#/definitions/{}".format(serializer_name)
+            }
         }
 
     def build_path_parameters(self):
@@ -543,6 +545,7 @@ class GenericViewIntrospector(BaseViewIntrospector):
     method_actions = {
         'post': 'create',
         'put': 'update',
+        'patch': 'partial_update',
         'delete': 'destroy'
     }
 

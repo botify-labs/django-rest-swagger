@@ -3,7 +3,7 @@ from django.contrib.auth.models import AnonymousUser
 import rest_framework
 import rest_framework_swagger as rfs
 
-from rest_framework import viewsets
+from rest_framework import viewsets, mixins
 from rest_framework.generics import GenericAPIView
 
 from rest_framework.serializers import BaseSerializer
@@ -35,11 +35,11 @@ class DocumentationGenerator(object):
         self.user = for_user or AnonymousUser()
 
     def get_root(self, endpoints_conf):
-        self.default_response = rfs.SWAGGER_SETTINGS.get("default_response_format", None)
-        self.default_response_name = rfs.SWAGGER_SETTINGS.get("default_response_format_definition_name", "DefaultResponse")
-        if self.default_response:
+        self.default_payload_definition_name = rfs.SWAGGER_SETTINGS.get("default_payload_definition_name", None)
+        self.default_payload_definition = rfs.SWAGGER_SETTINGS.get("default_payload_definition", None)
+        if self.default_payload_definition:
             self.explicit_response_types.update({
-                self.default_response_name: self.default_response
+                self.default_payload_definition_name: self.default_payload_definition
             })
 
         return {
@@ -106,10 +106,11 @@ class DocumentationGenerator(object):
 
             response_messages = {}
             # set default response reference
-            if self.default_response:
+            if self.default_payload_definition:
                 response_messages['default'] = {
-                    'schema': {
-                        '$ref': '#/definitions/' + self.default_response_name
+                    "description": "error payload",
+                    "schema": {
+                        "$ref": "#/definitions/{}".format(self.default_payload_definition_name)
                     }
                 }
 
@@ -139,10 +140,22 @@ class DocumentationGenerator(object):
         elif issubclass(callback, viewsets.ViewSetMixin):
             patterns = [api['pattern']]
             return ViewSetIntrospector(callback, path, pattern, self.user, patterns=patterns)
-        elif issubclass(callback, GenericAPIView):
+        elif issubclass(callback, GenericAPIView) and self._callback_generic_is_implemented(callback):
             return GenericViewIntrospector(callback, path, pattern, self.user)
         else:
             return APIViewIntrospector(callback, path, pattern, self.user)
+
+    def _callback_generic_is_implemented(self, callback):
+        """
+        An implemented callback is a view that extends from one of the GenericApiView child.
+        Because some views might extend directly from GenericAPIView without
+        implementing one of the List, Create, Retrieve, etc. mixins
+        """
+        return (issubclass(callback, mixins.CreateModelMixin) or
+                issubclass(callback, mixins.ListModelMixin) or
+                issubclass(callback, mixins.RetrieveModelMixin) or
+                issubclass(callback, mixins.UpdateModelMixin) or
+                issubclass(callback, mixins.DestroyModelMixin))
 
     def get_definitions(self, endpoints_conf):
         """
@@ -166,20 +179,6 @@ class DocumentationGenerator(object):
             # or require read_only fields in complex input.
 
             serializer_name = IntrospectorHelper.get_serializer_name(serializer)
-            # Writing
-            # no readonly fields
-            w_name = "Write{serializer}".format(serializer=serializer_name)
-
-            w_properties = OrderedDict((k, v) for k, v in data['fields'].items()
-                                       if k not in data['read_only'])
-
-            models[w_name] = {
-                'required': [i for i in data['required'] if i in w_properties.keys()],
-                'properties': w_properties,
-                'type': 'object'
-            }
-            if len(models[w_name]['required']) == 0:
-                del models[w_name]['required']
 
             # Reading
             # no write_only fields
