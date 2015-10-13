@@ -2,14 +2,15 @@
 
 """Handles the instrospection of REST Framework Views and ViewSets."""
 
-import inspect
 import itertools
 import re
-import yaml
-import importlib
 import logging
 
-from .compat import OrderedDict, strip_tags, get_pagination_attribures
+from .compat import strip_tags, get_pagination_attribures
+from .yamlparser import YAMLDocstringParser
+from .constants import INTROSPECTOR_ENUMS, INTROSPECTOR_PRIMITIVES
+from .utils import (normalize_data_format, get_default_value, get_view_description,
+                    do_markdown, get_serializer_name)
 from abc import ABCMeta, abstractmethod
 
 from django.http import HttpRequest
@@ -18,37 +19,14 @@ from django.utils.encoding import smart_text
 
 import rest_framework
 from rest_framework import viewsets
-from rest_framework.compat import apply_markdown
 from rest_framework.utils import formatting
 from rest_framework.mixins import ListModelMixin
-from django.utils import six
 try:
     import django_filters
 except ImportError:
     django_filters = None
 
 logger = logging.getLogger()
-
-
-def get_view_description(view_cls, html=False, docstring=None):
-    if docstring is not None:
-        view_cls = type(
-            view_cls.__name__ + '_fake',
-            (view_cls,),
-            {'__doc__': docstring})
-    return rest_framework.settings.api_settings \
-        .VIEW_DESCRIPTION_FUNCTION(view_cls, html)
-
-
-def get_default_value(field):
-    default_value = getattr(field, 'default', None)
-    if rest_framework.VERSION >= '3.0.0':
-        from rest_framework.fields import empty
-        if default_value == empty:
-            default_value = None
-    if callable(default_value):
-        default_value = default_value()
-    return default_value
 
 
 class IntrospectorHelper(object):
@@ -92,21 +70,6 @@ class IntrospectorHelper(object):
             split_lines = split_lines[0:cut_off]
 
         return "\n".join(split_lines)
-
-    @staticmethod
-    def get_serializer_name(serializer):
-        if serializer is None:
-            return None
-        if rest_framework.VERSION >= '3.0.0':
-            from rest_framework.serializers import ListSerializer
-            assert serializer != ListSerializer, "uh oh, what now?"
-            if isinstance(serializer, ListSerializer):
-                serializer = serializer.child
-
-        if inspect.isclass(serializer):
-            return serializer.__name__
-
-        return serializer.__class__.__name__
 
     @staticmethod
     def get_summary(callback, docstring=None):
@@ -158,17 +121,8 @@ class BaseViewIntrospector(object):
 class BaseMethodIntrospector(object):
     __metaclass__ = ABCMeta
 
-    ENUMS = [
-        'choice',
-        'multiple choice',
-    ]
-
-    PRIMITIVES = {
-        'integer': ['int32', 'int64'],
-        'number': ['float', 'double'],
-        'string': ['string', 'byte', 'date', 'date-time'],
-        'boolean': ['boolean'],
-    }
+    ENUMS = INTROSPECTOR_ENUMS
+    PRIMITIVES = INTROSPECTOR_PRIMITIVES
 
     def __init__(self, view_introspector, method):
         self.method = method
@@ -233,14 +187,14 @@ class BaseMethodIntrospector(object):
 
     def get_response_serializer_class(self):
         parser = self.get_yaml_parser()
-        serializer = parser.get_response_serializer_class(self.callback)
+        serializer = parser.get_yaml_response_serializer_class(self.callback)
         if serializer is None:
             serializer = self.get_serializer_class()
         return serializer
 
     def get_request_serializer_class(self):
         parser = self.get_yaml_parser()
-        serializer = parser.get_request_serializer_class(self.callback)
+        serializer = parser.get_yaml_request_serializer_class(self.callback)
         if serializer is None:
             serializer = self.get_serializer_class()
         return serializer
@@ -299,7 +253,7 @@ class BaseMethodIntrospector(object):
         the DRF serializer fields
         """
         params = []
-        path_params = self.build_path_parameters()
+        # path_params = self.build_path_parameters()
         body_params = self.build_body_parameters()
         form_params = self.build_form_parameters()
         query_params = self.build_query_parameters()
@@ -307,8 +261,8 @@ class BaseMethodIntrospector(object):
             query_params.extend(
                 self.build_query_parameters_from_django_filters())
 
-        if path_params:
-            params += path_params
+        # if path_params:
+        #     params += path_params
 
         if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
             params += form_params
@@ -341,7 +295,7 @@ class BaseMethodIntrospector(object):
 
     def build_body_parameters(self):
         serializer = self.get_request_serializer_class()
-        serializer_name = IntrospectorHelper.get_serializer_name(serializer)
+        serializer_name = get_serializer_name(serializer)
 
         if serializer_name is None:
             return
@@ -477,6 +431,9 @@ class BaseMethodIntrospector(object):
                 elif isinstance(field.choices, dict):
                     f['enum'] = [k for k, v in field.choices.items()]
 
+            if hasattr(field, 'is_documented') and not field.is_documented:
+                f['type'] = "object"
+
             data.append(f)
 
         return data
@@ -598,14 +555,6 @@ class WrappedAPIViewIntrospector(BaseViewIntrospector):
             class_docs)
         return get_view_description(
             self.callback, html=True, docstring=class_docs)
-
-
-def do_markdown(docstring):
-    # Markdown is optional
-    if apply_markdown:
-        return apply_markdown(docstring)
-    else:
-        return docstring.replace("\n\n", "<br/>")
 
 
 class APIViewMethodIntrospector(BaseMethodIntrospector):
@@ -748,563 +697,3 @@ class ViewSetMethodIntrospector(BaseMethodIntrospector):
                 })
                 normalize_data_format(data_type, None, parameters[-1])
         return parameters
-
-
-def multi_getattr(obj, attr, default=None):
-    """
-    Get a named attribute from an object; multi_getattr(x, 'a.b.c.d') is
-    equivalent to x.a.b.c.d. When a default argument is given, it is
-    returned when any attribute in the chain doesn't exist; without
-    it, an exception is raised when a missing attribute is encountered.
-
-    """
-    attributes = attr.split(".")
-    for i in attributes:
-        try:
-            obj = getattr(obj, i)
-        except AttributeError:
-            if default:
-                return default
-            else:
-                raise
-    return obj
-
-
-def normalize_data_format(data_type, data_format, obj):
-    """
-    sets 'type' on obj
-    sets a valid 'format' on obj if appropriate
-    uses data_format only if valid
-    """
-    if data_type == 'array':
-        data_format = None
-
-    flatten_primitives = [
-        val for sublist in BaseMethodIntrospector.PRIMITIVES.values()
-        for val in sublist
-    ]
-
-    if data_format not in flatten_primitives:
-        formats = BaseMethodIntrospector.PRIMITIVES.get(data_type, None)
-        if formats:
-            data_format = formats[0]
-        else:
-            data_format = None
-    if data_format == data_type:
-        data_format = None
-
-    obj['type'] = data_type
-    if data_format is None and 'format' in obj:
-        del obj['format']
-    elif data_format is not None:
-        obj['format'] = data_format
-
-
-class YAMLDocstringParser(object):
-    """
-    Docstring parser powered by YAML syntax
-
-    This parser allows you override some parts of automatic method inspection
-    behaviours which are not always correct.
-
-    See the following documents for more information about YAML and Swagger:
-    - https://github.com/wordnik/swagger-core/wiki
-    - http://www.yaml.org/spec/1.2/spec.html
-    - https://github.com/wordnik/swagger-codegen/wiki/Creating-Swagger-JSON-from-YAML-files
-
-    1. Control over parameters
-    ============================================================================
-    Define parameters and its properties in docstrings:
-
-        parameters:
-            - name: some_param
-              description: Foobar long description goes here
-              required: true
-              type: integer
-              in: form
-              minimum: 10
-              maximum: 100
-            - name: other_foo
-              in: query
-            - name: avatar
-              type: file
-
-    It is possible to override parameters discovered by method inspector by
-    defining:
-        `parameters_strategy` option to either `merge` or `replace`
-
-    To define different strategies for different `in`'s use the
-    following syntax:
-        parameters_strategy:
-            form: replace
-            query: merge
-
-    By default strategy is set to `merge`
-
-
-    Sometimes method inspector produces wrong list of parameters that
-    you might not won't to see in SWAGGER form. To handle this situation
-    define `ins` that should be omitted
-        omit_parameters:
-            - form
-
-    2. Control over serializers
-    ============================================================================
-    Once in a while you are using different serializers inside methods
-    but automatic method inspector cannot detect this. For that purpose there
-    is two explicit parameters that allows you to discard serializer detected
-    by method inspector OR replace it with another one
-
-        serializer: some.package.FooSerializer
-        omit_serializer: true
-
-    3. Custom Response Class
-    ============================================================================
-    If your view is not using serializer at all but instead outputs simple
-    data type such as JSON you may define custom response object in method
-    signature like follows:
-
-        type:
-          name:
-            required: true
-            type: string
-          url:
-            required: false
-            type: url
-
-    4. Response Messages (Error Codes)
-    ============================================================================
-    If you'd like to share common response errors that your APIView might throw
-    you can define them in docstring using following format:
-
-    responseMessages:
-        - code: 401
-          message: Not authenticated
-        - code: 403
-          message: Insufficient rights to call this procedure
-
-
-    5. Different models for reading and writing operations
-    ============================================================================
-    Since REST Framework won't output write_only fields in responses as well as
-    does not require read_only fields to be provided it is worth to
-    automatically register 2 separate models for reading and writing operations.
-
-    Discovered serializer will be registered with `Write` or `Read` prefix.
-    Response Class will be automatically adjusted if serializer class was
-    detected by method inspector.
-
-    You can also refer to this models in your parameters:
-
-    parameters:
-        - name: CigarSerializer
-          type: WriteCigarSerializer
-          in: body
-
-
-    SAMPLE DOCSTRING:
-    ============================================================================
-
-    ---
-    # API Docs
-    # Note: YAML always starts with `---`
-
-    type:
-      name:
-        required: true
-        type: string
-      url:
-        required: false
-        type: url
-      created_at:
-        required: true
-        type: string
-        format: date-time
-
-    serializer: .serializers.FooSerializer
-    omit_serializer: false
-
-    parameters_strategy: merge
-    omit_parameters:
-        - path
-    parameters:
-        - name: name
-          description: Foobar long description goes here
-          required: true
-          type: string
-          in: form
-        - name: other_foo
-          in: query
-        - name: other_bar
-          in: query
-        - name: avatar
-          type: file
-
-    responseMessages:
-        - code: 401
-          message: Not authenticated
-    """
-    PARAM_TYPES = ['header', 'path', 'formData', 'body', 'query']
-    yaml_error = None
-
-    def __init__(self, method_introspector):
-        self.method_introspector = method_introspector
-        self.object = self.load_obj_from_docstring(
-            docstring=self.method_introspector.get_docs())
-        if self.object is None:
-            self.object = {}
-
-    def load_obj_from_docstring(self, docstring):
-        """Loads YAML from docstring"""
-        split_lines = trim_docstring(docstring).split('\n')
-
-        # Cut YAML from rest of docstring
-        for index, line in enumerate(split_lines):
-            line = line.strip()
-            if line.startswith('---'):
-                cut_from = index
-                break
-        else:
-            return None
-
-        yaml_string = "\n".join(split_lines[cut_from:])
-        yaml_string = formatting.dedent(yaml_string)
-        try:
-            return yaml.load(yaml_string)
-        except yaml.YAMLError as e:
-            self.yaml_error = e
-            return None
-
-    def _load_class(self, cls_path, callback):
-        """
-        Dynamically load a class from a string
-        """
-        if not cls_path or not callback or not hasattr(callback, '__module__'):
-            return None
-
-        package = None
-
-        if '.' not in cls_path:
-            # within current module/file
-            class_name = cls_path
-            module_path = self.method_introspector.get_module()
-        else:
-            # relative or fully qualified path import
-            class_name = cls_path.split('.')[-1]
-            module_path = ".".join(cls_path.split('.')[:-1])
-
-            if cls_path.startswith('.'):
-                # relative lookup against current package
-                # ..serializers.FooSerializer
-                package = self.method_introspector.get_module()
-
-        class_obj = None
-        # Try to perform local or relative/fq import
-        try:
-            module = importlib.import_module(module_path, package=package)
-            class_obj = getattr(module, class_name, None)
-        except ImportError:
-            pass
-
-        # Class was not found, maybe it was imported to callback module?
-        # from app.serializers import submodule
-        # serializer: submodule.FooSerializer
-        if class_obj is None:
-            try:
-                module = importlib.import_module(
-                    self.method_introspector.get_module())
-                class_obj = multi_getattr(module, cls_path, None)
-            except (ImportError, AttributeError):
-                raise Exception("Could not find %s, looked in %s" % (cls_path, module))
-
-        return class_obj
-
-    def get_serializer_class(self, callback):
-        """
-        Retrieves serializer class from YAML object
-        """
-        serializer = self.object.get('serializer', None)
-        try:
-            return self._load_class(serializer, callback)
-        except (ImportError, ValueError):
-            pass
-        return None
-
-    def get_extra_serializer_classes(self, callback):
-        """
-        Retrieves serializer classes from pytype YAML objects
-        """
-        parameters = self.object.get('parameters', [])
-        serializers = []
-        for parameter in parameters:
-            serializer = parameter.get('pytype', None)
-            if serializer is not None:
-                try:
-                    serializer = self._load_class(serializer, callback)
-                    serializers.append(serializer)
-                except (ImportError, ValueError):
-                    pass
-        return serializers
-
-    def get_request_serializer_class(self, callback):
-        """
-        Retrieves request serializer class from YAML object
-        """
-        serializer = self.object.get('request_serializer', None)
-        try:
-            return self._load_class(serializer, callback)
-        except (ImportError, ValueError):
-            pass
-        return None
-
-    def get_response_serializer_class(self, callback):
-        """
-        Retrieves response serializer class from YAML object
-        """
-        serializer = self.object.get('response_serializer', None)
-        if isinstance(serializer, list):
-            serializer = serializer[0]
-        try:
-            return self._load_class(serializer, callback)
-        except (ImportError, ValueError):
-            pass
-        return None
-
-    def get_response_type(self):
-        """
-        Docstring may define custom response class
-        """
-        return self.object.get('type', None)
-
-    def get_response_messages(self):
-        """
-        Retrieves response error codes from YAML object
-        """
-        messages = {}
-        response_messages = self.object.get('responseMessages', [])
-        for message in response_messages:
-            data = {
-                'description': message.get('description', '')
-            }
-            schema = message.get('schema', None)
-            if schema:
-                data['schema'] = schema
-            messages[message.get('code')] = data
-        return messages
-
-    def get_view_mocker(self, callback):
-        view_mocker = self.object.get('view_mocker', lambda a: a)
-        if isinstance(view_mocker, six.string_types):
-            view_mocker = self._load_class(view_mocker, callback)
-        return view_mocker
-
-    def get_parameters(self, callback, docstring_param_name='parameters'):
-        """
-        Retrieves parameters from YAML object
-        """
-        params = []
-        fields = self.object.get(docstring_param_name, [])
-        for field in fields:
-            param_type = field.get('in', None)
-            if param_type not in self.PARAM_TYPES:
-                param_type = 'formData'
-
-            # Data Type & Format
-            # See:
-            # https://github.com/wordnik/swagger-core/wiki/1.2-transition#wiki-additions-2
-            # https://github.com/wordnik/swagger-core/wiki/Parameters
-            data_type = field.get('type', 'string')
-            pytype = field.get('pytype', None)
-            if pytype is not None:
-                try:
-                    serializer = self._load_class(pytype, callback)
-                    data_type = IntrospectorHelper.get_serializer_name(
-                        serializer)
-                except (ImportError, ValueError):
-                    pass
-            if param_type in ['path', 'query', 'header']:
-                if data_type not in BaseMethodIntrospector.PRIMITIVES:
-                    data_type = 'string'
-
-            # Data Format
-            data_format = field.get('format', None)
-
-            f = {
-                'in': param_type,
-                'name': field.get('name', None),
-                'description': field.get('description', ''),
-                'required': field.get('required', False),
-            }
-
-            normalize_data_format(data_type, data_format, f)
-
-            if field.get('defaultValue', None) is not None:
-                f['defaultValue'] = field.get('defaultValue', None)
-
-            # Allow Multiple Values &f=1,2,3,4
-            if field.get('allowMultiple'):
-                f['allowMultiple'] = True
-
-            if f['type'] == 'array':
-                items = field.get('items', {})
-                elt_data_type = items.get('type', 'string')
-                elt_data_format = items.get('type', 'format')
-                f['items'] = {
-                }
-                normalize_data_format(elt_data_type, elt_data_format, f['items'])
-
-                uniqueItems = field.get('uniqueItems', None)
-                if uniqueItems is not None:
-                    f['uniqueItems'] = uniqueItems
-
-            # Min/Max are optional
-            if 'minimum' in field and data_type == 'integer':
-                f['minimum'] = str(field.get('minimum', 0))
-
-            if 'maximum' in field and data_type == 'integer':
-                f['maximum'] = str(field.get('maximum', 0))
-
-            # enum options
-            enum = field.get('enum', [])
-            if enum:
-                f['enum'] = enum
-
-            # File support
-            if f['type'] == 'file':
-                f['in'] = 'body'
-
-            params.append(f)
-
-        return params
-
-    def discover_parameters(self, inspector):
-        """
-        Applies parameters strategy for parameters discovered
-        from method and docstring
-        """
-        parameters = []
-        docstring_params = self.get_parameters(inspector.callback)
-        method_params = inspector.get_parameters()
-
-        # in may differ, overwrite first
-        # so strategy can be applied
-        for meth_param in method_params:
-            for doc_param in docstring_params:
-                if doc_param['name'] == meth_param['name']:
-                    if 'in' in doc_param:
-                        meth_param['in'] = doc_param['in']
-
-        for param_type in self.PARAM_TYPES:
-            if self.should_omit_parameters(param_type):
-                continue
-            parameters += self._apply_strategy(
-                param_type, method_params, docstring_params
-            )
-
-        # PATCH requests expects all fields except path fields to be optional
-        if inspector.get_http_method() == "PATCH":
-            for param in parameters:
-                if param['in'] != 'path':
-                    param['required'] = False
-
-        return parameters
-
-    def discover_querystring_parameters(self, inspector):
-        return self.get_parameters(inspector.callback, docstring_param_name='querystring_parameters')
-
-    def should_omit_parameters(self, param_type):
-        """
-        Checks if particular parameter types should be omitted explicitly
-        """
-        return param_type in self.object.get('omit_parameters', [])
-
-    def should_omit_serializer(self):
-        """
-        Checks if serializer should be intentionally omitted
-        """
-        return self.object.get('omit_serializer', False)
-
-    def _apply_strategy(self, param_type, method_params, docstring_params):
-        """
-        Applies strategy for subset of parameters filtered by `in`
-        """
-        strategy = self.get_parameters_strategy(param_type=param_type)
-        method_params = self._filter_params(
-            params=method_params,
-            key='in',
-            val=param_type
-        )
-        docstring_params = self._filter_params(
-            params=docstring_params,
-            key='in',
-            val=param_type
-        )
-
-        if strategy == 'replace':
-            return docstring_params or method_params
-        elif strategy == 'merge':
-            return self._merge_params(
-                method_params,
-                docstring_params,
-                key='name',
-            )
-
-        return []
-
-    @staticmethod
-    def _filter_params(params, key, val):
-        """
-        Returns filter function for parameters structure
-        """
-        def filter_by(o):
-            return o.get(key, None) == val
-        return filter(filter_by, params)
-
-    @staticmethod
-    def _merge_params(params1, params2, key):
-        """
-        Helper method.
-        Merges parameters lists by key
-        """
-        import itertools
-        merged = OrderedDict()
-        for item in itertools.chain(params1, params2):
-            merged[item[key]] = item
-
-        return [val for (_, val) in merged.items()]
-
-    def get_parameters_strategy(self, param_type=None):
-        """
-        Get behaviour strategy for parameter types.
-
-        It can be either `merge` or `replace`:
-            - `merge` overwrites duplicate parameters signatures
-                discovered by inspector with the ones defined explicitly in
-                docstring
-            - `replace` strategy completely overwrites parameters discovered
-                by inspector with the ones defined explicitly in docstring.
-
-        Note: Strategy can be defined per `in` so `path` parameters can
-        use `merge` strategy while `form` parameters will use `replace`
-        strategy.
-
-        Default strategy: `merge`
-        """
-        default = 'merge'
-        strategy = self.object.get('parameters_strategy', default)
-        if hasattr(strategy, 'get') and param_type is not None:
-            strategy = strategy.get(param_type, default)
-
-        if strategy not in ['merge', 'replace']:
-            strategy = default
-
-        return strategy
-
-    def get_param(self, param_name, default):
-        """
-        :param param_name: lookup parameter
-        :type param_name: string
-        :param default: default value if parameter not found
-        :return : a single parameter found in the docstring
-        """
-        return self.object.get(param_name, default)

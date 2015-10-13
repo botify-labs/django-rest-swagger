@@ -12,14 +12,13 @@ from .introspectors import (
     APIViewIntrospector,
     GenericViewIntrospector,
     BaseMethodIntrospector,
-    IntrospectorHelper,
     ViewSetIntrospector,
     WrappedAPIViewIntrospector,
     get_data_type,
     get_default_value,
 )
 from .compat import OrderedDict
-from .utils import extract_base_path
+from .utils import extract_base_path, get_serializer_name
 
 
 class DocumentationGenerator(object):
@@ -71,10 +70,10 @@ class DocumentationGenerator(object):
             path_item[operation.pop('method').lower()] = operation
 
         method_introspectors = self.get_method_introspectors(api_endpoint, introspector)
-        # @TODO : We might not have any method introspectors ?
         # we get the main parameters (common to all operations) from the first view operation
-        doc_parser = method_introspectors[0].get_yaml_parser()
-        path_item['parameters'] = doc_parser.discover_parameters(inspector=method_introspectors[0])
+        # only path parameters are commont to all operations
+        path_item['parameters'] = method_introspectors[0].build_path_parameters()
+
         return path_item
 
     def get_method_introspectors(self, api_endpoint, introspector):
@@ -102,9 +101,8 @@ class DocumentationGenerator(object):
                 'summary': method_introspector.get_summary(),
                 'operationId': method_introspector.get_operation_id(),
                 'produces': doc_parser.get_param(param_name='produces', default=rfs.SWAGGER_SETTINGS.get('produces')),
-                # 'externalDocs': doc_parser.get_param(param_name='externalDocs', default=''),
                 'tags': doc_parser.get_param(param_name='tags', default=[]),
-                'parameters': doc_parser.discover_querystring_parameters(inspector=method_introspector),
+                'parameters': doc_parser.discover_parameters(inspector=method_introspector)
             }
 
             if doc_parser.yaml_error is not None:
@@ -185,7 +183,7 @@ class DocumentationGenerator(object):
             # i.e. rest framework does not output write_only fields in response
             # or require read_only fields in complex input.
 
-            serializer_name = IntrospectorHelper.get_serializer_name(serializer)
+            serializer_name = get_serializer_name(serializer)
 
             # Reading
             # no write_only fields
@@ -276,7 +274,7 @@ class DocumentationGenerator(object):
             })
             return response_type_name
         else:
-            serializer_name = IntrospectorHelper.get_serializer_name(serializer)
+            serializer_name = get_serializer_name(serializer)
             if serializer_name is not None:
                 return serializer_name
 
@@ -388,8 +386,10 @@ class DocumentationGenerator(object):
                 has_many = isinstance(field, (ListSerializer, ManyRelatedField))
 
             if isinstance(field, BaseSerializer) or has_many:
-                if isinstance(field, BaseSerializer):
-                    field_serializer = IntrospectorHelper.get_serializer_name(field)
+                if hasattr(field, 'is_documented') and not field.is_documented:
+                    f['type'] = "object"
+                elif isinstance(field, BaseSerializer):
+                    field_serializer = get_serializer_name(field)
 
                     if getattr(field, 'write_only', False):
                         field_serializer = "Write{}".format(field_serializer)
