@@ -102,7 +102,7 @@ class DocumentationGenerator(object):
                 'operationId': method_introspector.get_operation_id(),
                 'produces': doc_parser.get_param(param_name='produces', default=rfs.SWAGGER_SETTINGS.get('produces')),
                 'tags': doc_parser.get_param(param_name='tags', default=[]),
-                'parameters': doc_parser.discover_parameters(inspector=method_introspector)
+                'parameters': self._get_operation_parameters(method_introspector)
             }
 
             if doc_parser.yaml_error is not None:
@@ -135,6 +135,20 @@ class DocumentationGenerator(object):
             operations.append(operation)
 
         return operations
+
+    def _get_operation_parameters(self, introspector):
+        """
+        :param introspector: method introspector
+        :return : if the serializer must be placed in the body, it will build
+        the body parameters and add the serializer to the explicit_serializers list
+        else it will discover the parameters (from docstring and serializer)
+        """
+        serializer = introspector.get_request_serializer_class()
+        if hasattr(serializer, "_in") and serializer._in == "body":
+            self.explicit_serializers.add(serializer)
+            # @TODO include querystring parameters if needed too
+            return introspector.build_body_parameters()
+        return introspector.get_yaml_parser().discover_parameters(inspector=introspector)
 
     def get_introspector(self, api):
         path = api['path']
