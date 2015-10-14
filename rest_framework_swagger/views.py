@@ -42,7 +42,6 @@ class BaseSwaggerView(object):
 class SwaggerUIView(BaseSwaggerView, View):
     def get(self, request, version, swagger_config_name=None):
         self.check_permission(request, swagger_config_name)
-
         data = {
             'swagger_settings': {
                 'swagger_file': "%s/swagger.json" % self.get_full_base_path(request),
@@ -55,9 +54,8 @@ class SwaggerUIView(BaseSwaggerView, View):
         return response
 
     def get_full_base_path(self, request):
-        try:
-            base_path = self.config['base_path']
-        except KeyError:
+        base_path = self.config.get('base_path', None)
+        if not base_path:
             return request.build_absolute_uri(request.path).rstrip('/')
         else:
             protocol = 'https' if request.is_secure() else 'http'
@@ -65,6 +63,7 @@ class SwaggerUIView(BaseSwaggerView, View):
 
 
 class Swagger2JSONView(BaseSwaggerView, APIView):
+    permission_classes = (AllowAny,)
     renderer_classes = (JSONRenderer, )
 
     def get(self, request, version, swagger_config_name=None):

@@ -5,7 +5,7 @@ from rest_framework_swagger.views import SwaggerUIView, Swagger2JSONView
 urlpatterns = patterns(
     '',
     url(
-        r'^(?P<swagger_config_name>.+)/swagger\.json$',
+        r'^(?P<swagger_config_name>[\w]+)/swagger\.json$',
         Swagger2JSONView.as_view(),
         name='django.swagger.2.0.json.view'
     ),
@@ -15,7 +15,7 @@ urlpatterns = patterns(
         name='django.swagger.2.0.json.view'
     ),
     url(
-        r'^(?P<swagger_config_name>.+)/?$',
+        r'^(?P<swagger_config_name>[\w]+)/?$',
         SwaggerUIView.as_view(),
         name="django.swagger.base.view"
     ),

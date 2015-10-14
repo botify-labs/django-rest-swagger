@@ -151,7 +151,7 @@ class UrlParser(object):
             elif isinstance(pattern, RegexURLResolver):
                 api_urls_module = pattern.urlconf_name.__name__ if hasattr(pattern.urlconf_name, '__name__') else ""
                 # only modules included on the include_module_paths list
-                if api_urls_module not in include_module_paths:
+                if include_module_paths and api_urls_module not in include_module_paths:
                     continue
 
                 # except modules included on the exclude_module_paths list
