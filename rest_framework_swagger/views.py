@@ -1,19 +1,16 @@
 import json
-from django.utils import six
 
 from django.views.generic import View
 from django.utils.safestring import mark_safe
-from django.utils.encoding import smart_text
 from django.shortcuts import render_to_response, RequestContext
 from django.core.exceptions import PermissionDenied
-from .compat import import_string
+from .config import SwaggerConfig
 
-from rest_framework.views import Response
+from rest_framework.views import Response, APIView
 from rest_framework.settings import api_settings
-from rest_framework.utils import formatting
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 
 from rest_framework_swagger.urlparser import UrlParser
-from rest_framework_swagger.apidocview import APIDocView
 from rest_framework_swagger.docgenerator import DocumentationGenerator
 
 import rest_framework_swagger as rfs
@@ -28,142 +25,50 @@ except IndexError:
     from rest_framework.renderers import JSONRenderer
 
 
-def get_restructuredtext(view_cls, html=False):
-    from docutils import core
-
-    description = view_cls.__doc__ or ''
-    description = formatting.dedent(smart_text(description))
-    if html:
-        parts = core.publish_parts(source=description, writer_name='html')
-        html = parts['body_pre_docinfo'] + parts['fragment']
-        return mark_safe(html)
-    return description
-
-
-def get_full_base_path(request):
-    try:
-        base_path = rfs.SWAGGER_SETTINGS['base_path']
-    except KeyError:
-        return request.build_absolute_uri(request.path).rstrip('/')
-    else:
-        protocol = 'https' if request.is_secure() else 'http'
-        return '{0}://{1}'.format(protocol, base_path.rstrip('/'))
-
-
-class SwaggerUIView(View):
-    def get(self, request, version, *args, **kwargs):
-
+class BaseSwaggerView(object):
+    def check_permission(self, request, swagger_config_name):
+        self.config = SwaggerConfig().get_config(swagger_config_name)
         if not self.has_permission(request):
-            return self.handle_permission_denied(request)
+            raise PermissionDenied()
 
-        template_name = rfs.SWAGGER_SETTINGS.get('template_path')
+    def has_permission(self, request):
+        if self.config['is_superuser'] and not request.user.is_superuser:
+            return False
+        if self.config['is_authenticated'] and not request.user.is_authenticated():
+            return False
+        return True
+
+
+class SwaggerUIView(BaseSwaggerView, View):
+    def get(self, request, version, swagger_config_name=None):
+        self.check_permission(request, swagger_config_name)
+
         data = {
             'swagger_settings': {
-                'swagger_file': "%s/swagger.json" % get_full_base_path(request),
-                'user_token': request.user.auth_token.key,
-                'enabled_methods': mark_safe(
-                    json.dumps(rfs.SWAGGER_SETTINGS.get('enabled_methods'))),
-                'doc_expansion': rfs.SWAGGER_SETTINGS.get('doc_expansion', ''),
+                'swagger_file': "%s/swagger.json" % self.get_full_base_path(request),
+                'user_token': request.user.auth_token.key
             }
         }
         response = render_to_response(
-            template_name, RequestContext(request, data))
+            "rest_framework_swagger/index.html", RequestContext(request, data))
 
         return response
 
-    def has_permission(self, request):
-        if rfs.SWAGGER_SETTINGS.get('is_superuser') and \
-                not request.user.is_superuser:
-            return False
-
-        if rfs.SWAGGER_SETTINGS.get('is_authenticated') and \
-                not request.user.is_authenticated():
-            return False
-
-        return True
-
-    def handle_permission_denied(self, request):
-        permission_denied_handler = rfs.SWAGGER_SETTINGS.get(
-            'permission_denied_handler')
-        if isinstance(permission_denied_handler, six.string_types):
-            permission_denied_handler = import_string(
-                permission_denied_handler)
-
-        if permission_denied_handler:
-            return permission_denied_handler(request)
-        else:
-            raise PermissionDenied()
-
-
-class SwaggerResourcesView(APIDocView):
-    renderer_classes = (JSONRenderer, )
-
-    def get(self, request, *args, **kwargs):
-        apis = [{'path': '/' + path} for path in self.get_resources()]
-        return Response({
-            'apiVersion': rfs.SWAGGER_SETTINGS.get('api_version', ''),
-            'swaggerVersion': '1.2',
-            'basePath': self.get_base_path(),
-            'apis': apis,
-            'info': rfs.SWAGGER_SETTINGS.get('info', {
-                'contact': '',
-                'description': '',
-                'license': '',
-                'licenseUrl': '',
-                'termsOfServiceUrl': '',
-                'title': '',
-            }),
-        })
-
-    def get_base_path(self):
+    def get_full_base_path(self, request):
         try:
-            base_path = rfs.SWAGGER_SETTINGS['base_path']
+            base_path = self.config['base_path']
         except KeyError:
-            return self.request.build_absolute_uri(
-                self.request.path).rstrip('/')
+            return request.build_absolute_uri(request.path).rstrip('/')
         else:
-            protocol = 'https' if self.request.is_secure() else 'http'
-            return '{0}://{1}/{2}'.format(protocol, base_path, 'api-docs')
-
-    def get_resources(self):
-        urlparser = UrlParser()
-        urlconf = getattr(self.request, "urlconf", None)
-        exclude_namespaces = rfs.SWAGGER_SETTINGS.get('exclude_namespaces')
-        apis = urlparser.get_apis(urlconf=urlconf, exclude_namespaces=exclude_namespaces)
-        authorized_apis = filter(lambda a: self.handle_resource_access(self.request, a['pattern']), apis)
-        authorized_apis_list = list(authorized_apis)
-        resources = urlparser.get_top_level_apis(authorized_apis_list)
-        return resources
+            protocol = 'https' if request.is_secure() else 'http'
+            return '{0}://{1}'.format(protocol, base_path.rstrip('/'))
 
 
-class SwaggerApiView(APIDocView):
+class Swagger2JSONView(BaseSwaggerView, APIView):
     renderer_classes = (JSONRenderer, )
 
-    def get(self, request, version, path):
-        apis = self.get_apis_for_resource(path)
-        generator = DocumentationGenerator(for_user=request.user)
-        return Response({
-            'apiVersion': rfs.SWAGGER_SETTINGS.get('api_version', ''),
-            'swaggerVersion': '1.2',
-            'basePath': self.api_full_uri.rstrip('/'),
-            'resourcePath': '/' + path,
-            'apis': generator.generate(apis),
-            'models': generator.get_models(apis),
-        })
-
-    def get_apis_for_resource(self, filter_path):
-        urlparser = UrlParser()
-        urlconf = getattr(self.request, "urlconf", None)
-        apis = urlparser.get_apis(urlconf=urlconf, filter_path=filter_path)
-        authorized_apis = filter(lambda a: self.handle_resource_access(self.request, a['pattern']), apis)
-        authorized_apis_list = list(authorized_apis)
-        return authorized_apis_list
-
-
-class Swagger2JSONView(APIDocView):
-    renderer_classes = (JSONRenderer, )
-
-    def get(self, request, version):
+    def get(self, request, version, swagger_config_name=None):
+        self.check_permission(request, swagger_config_name)
         paths = self.get_paths()
         generator = DocumentationGenerator(for_user=request.user)
         return Response(generator.get_root(paths))
@@ -171,15 +76,14 @@ class Swagger2JSONView(APIDocView):
     def get_paths(self):
         urlparser = UrlParser()
         urlconf = getattr(self.request, "urlconf", None)
-        exclude_namespaces = rfs.SWAGGER_SETTINGS.get('exclude_namespaces')
-        exclude_module_paths = rfs.SWAGGER_SETTINGS.get('exclude_module_paths')
-        exclude_url_patterns = rfs.SWAGGER_SETTINGS.get('exclude_url_patterns')
+        exclude_namespaces = self.config.get('exclude_namespaces', [])
+        exclude_module_paths = self.config.get('exclude_module_paths', [])
+        include_module_paths = self.config.get('include_module_paths', [])
+        exclude_url_patterns = self.config.get('exclude_url_patterns', [])
 
-        apis = urlparser.get_apis(
+        return urlparser.get_apis(
             urlconf=urlconf,
+            include_module_paths=include_module_paths,
             exclude_namespaces=exclude_namespaces,
             exclude_module_paths=exclude_module_paths,
             exclude_url_patterns=exclude_url_patterns)
-        authorized_apis = filter(lambda a: self.handle_resource_access(self.request, a['pattern']), apis)
-        authorized_apis_list = list(authorized_apis)
-        return authorized_apis_list

@@ -9,13 +9,11 @@ from django.contrib.admindocs.views import simplify_regex
 
 from rest_framework.views import APIView
 
-from .apidocview import APIDocView
-
 
 class UrlParser(object):
 
     def get_apis(self, patterns=None, urlconf=None, filter_path=None,
-                 exclude_namespaces=[], exclude_module_paths=[],
+                 include_module_paths=[], exclude_namespaces=[], exclude_module_paths=[],
                  exclude_url_patterns=[]):
         """
         Returns all the DRF APIViews found in the project URLs
@@ -35,6 +33,7 @@ class UrlParser(object):
         apis = self.__flatten_patterns_tree__(
             patterns,
             filter_path=filter_path,
+            include_module_paths=include_module_paths,
             exclude_namespaces=exclude_namespaces,
             exclude_module_paths=exclude_module_paths,
             exclude_url_patterns=exclude_url_patterns
@@ -127,7 +126,7 @@ class UrlParser(object):
 
     def __flatten_patterns_tree__(self, patterns, prefix='', filter_path=None,
                                   exclude_namespaces=[], exclude_module_paths=[],
-                                  exclude_url_patterns=[]):
+                                  exclude_url_patterns=[], include_module_paths=[]):
         """
         Uses recursion to flatten url tree.
 
@@ -137,6 +136,7 @@ class UrlParser(object):
         pattern_list = []
 
         for pattern in patterns:
+
             if isinstance(pattern, RegexURLPattern):
                 endpoint_data = self.__assemble_endpoint_data__(pattern, prefix, filter_path=filter_path)
 
@@ -149,7 +149,13 @@ class UrlParser(object):
                 pattern_list.append(endpoint_data)
 
             elif isinstance(pattern, RegexURLResolver):
-                if hasattr(pattern.urlconf_name, '__name__') and pattern.urlconf_name.__name__ in exclude_module_paths:
+                api_urls_module = pattern.urlconf_name.__name__ if hasattr(pattern.urlconf_name, '__name__') else ""
+                # only modules included on the include_module_paths list
+                if api_urls_module not in include_module_paths:
+                    continue
+
+                # except modules included on the exclude_module_paths list
+                if api_urls_module in exclude_module_paths:
                     continue
 
                 if pattern.namespace is not None and pattern.namespace in exclude_namespaces:
@@ -176,15 +182,11 @@ class UrlParser(object):
             return
 
         if (hasattr(pattern.callback, 'cls') and
-                issubclass(pattern.callback.cls, APIView) and
-                not issubclass(pattern.callback.cls, APIDocView)):
-
+                issubclass(pattern.callback.cls, APIView)):
             return pattern.callback.cls
 
         elif (hasattr(pattern.callback, 'cls_instance') and
-                isinstance(pattern.callback.cls_instance, APIView) and
-                not issubclass(pattern.callback.cls_instance, APIDocView)):
-
+                isinstance(pattern.callback.cls_instance, APIView)):
             return pattern.callback.cls_instance
 
     def __exclude_router_api_root__(self, callback):
