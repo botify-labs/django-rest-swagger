@@ -257,6 +257,7 @@ class BaseMethodIntrospector(object):
         body_params = self.build_body_parameters()
         form_params = self.build_form_parameters()
         query_params = self.build_query_parameters()
+        pagination_params = self.build_pagination_parameters()
         if django_filters is not None:
             query_params.extend(
                 self.build_query_parameters_from_django_filters())
@@ -272,6 +273,9 @@ class BaseMethodIntrospector(object):
 
         if query_params:
             params += query_params
+
+        if pagination_params:
+            params += pagination_params
 
         return params
 
@@ -345,6 +349,33 @@ class BaseMethodIntrospector(object):
                                'type': 'string'})
 
         return params
+
+    def build_pagination_parameters(self):
+        paginator = self.callback.pagination_class if hasattr(self.callback, 'pagination_class') else None
+        if paginator:
+            page = paginator.page_query_param
+            size = paginator.page_size_query_param
+            if not page:
+                logger.error("paginator {} on view {} does not have a page query param".format(
+                    paginator, self.callback
+                ))
+
+            params = [{
+                'in': 'query',
+                'name': page,
+                'description': "Page Number",
+                'type': 'int'
+            }]
+
+            if size:
+                params.append({
+                    'in': 'query',
+                    'name': size,
+                    'description': "Page Size",
+                    'type': 'int'
+                })
+            return params
+        return None
 
     def build_query_parameters_from_django_filters(self):
         """
