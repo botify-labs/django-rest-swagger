@@ -57,7 +57,7 @@ class DocumentationGenerator(object):
         paths_dict = {}
         for endpoint in endpoints_conf:
             # remove the base_path from the begining of the path
-            endpoint['path'] = extract_base_path(endpoint['path'])
+            endpoint['path'] = extract_base_path(path=endpoint['path'], base_path=self.config.get('basePath'))
             paths_dict[endpoint['path']] = self.get_path_item(endpoint)
         return paths_dict
 

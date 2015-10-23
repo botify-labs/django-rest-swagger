@@ -42,15 +42,12 @@ def get_default_value(field):
     return default_value
 
 
-def extract_base_path(path):
+def extract_base_path(path, base_path):
     """
-    extracts the base_path (defined on settings) at the begining of the path
+    extracts the base_path at the begining of the path
     e.g:
-        SWAGGER_SETTINGS["basePath"] = "/foo"
-        extract_base_path(path="/foo/bar") => "/bar"
+        extract_base_path(path="/foo/bar", base_path="/foo") => "/bar"
     """
-    from rest_framework_swagger import SWAGGER_SETTINGS
-    base_path = SWAGGER_SETTINGS.get("basePath", '')
     if path.startswith(base_path):
         path = path[len(base_path):]
     return path
