@@ -1,20 +1,14 @@
-import json
-
 from django.views.generic import View
-from django.utils.safestring import mark_safe
 from django.shortcuts import render_to_response, RequestContext
 from django.core.exceptions import PermissionDenied
 from .config import SwaggerConfig
 
 from rest_framework.views import Response, APIView
 from rest_framework.settings import api_settings
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import AllowAny
 
 from rest_framework_swagger.urlparser import UrlParser
 from rest_framework_swagger.docgenerator import DocumentationGenerator
-
-import rest_framework_swagger as rfs
-
 
 try:
     JSONRenderer = list(filter(
@@ -73,16 +67,5 @@ class Swagger2JSONView(BaseSwaggerView, APIView):
         return Response(generator.get_root(paths))
 
     def get_paths(self):
-        urlparser = UrlParser()
-        urlconf = getattr(self.request, "urlconf", None)
-        exclude_namespaces = self.config.get('exclude_namespaces', [])
-        exclude_module_paths = self.config.get('exclude_module_paths', [])
-        include_module_paths = self.config.get('include_module_paths', [])
-        exclude_url_patterns = self.config.get('exclude_url_patterns', [])
-
-        return urlparser.get_apis(
-            urlconf=urlconf,
-            include_module_paths=include_module_paths,
-            exclude_namespaces=exclude_namespaces,
-            exclude_module_paths=exclude_module_paths,
-            exclude_url_patterns=exclude_url_patterns)
+        urlparser = UrlParser(self.config, self.request)
+        return urlparser.get_apis()
