@@ -262,14 +262,11 @@ class BaseMethodIntrospector(object):
             query_params.extend(
                 self.build_query_parameters_from_django_filters())
 
-        # if path_params:
-        #     params += path_params
+        # if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
+        #     params += form_params
 
-        if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
-            params += form_params
-
-            if not form_params and body_params is not None:
-                params.append(body_params)
+        #     if not form_params and body_params is not None:
+        #         params.append(body_params)
 
         if query_params:
             params += query_params

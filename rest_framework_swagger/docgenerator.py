@@ -144,11 +144,15 @@ class DocumentationGenerator(object):
         else it will discover the parameters (from docstring and serializer)
         """
         serializer = introspector.get_request_serializer_class()
+        parameters = []
         if hasattr(serializer, "_in") and serializer._in == "body":
             self.explicit_serializers.add(serializer)
-            # @TODO include querystring parameters if needed too
-            return introspector.build_body_parameters()
-        return introspector.get_yaml_parser().discover_parameters(inspector=introspector)
+            parameters.append(introspector.build_body_parameters())
+
+        parameters.extend(
+            introspector.get_yaml_parser().discover_parameters(inspector=introspector)
+        )
+        return parameters
 
     def get_introspector(self, api):
         path = api['path']
