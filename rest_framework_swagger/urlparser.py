@@ -1,4 +1,3 @@
-import os
 from importlib import import_module
 from django.core.urlresolvers import RegexURLResolver, RegexURLPattern
 from django.contrib.admindocs.views import simplify_regex
@@ -109,16 +108,10 @@ class UrlParser(object):
         """
         Returns True if the URL's callback is rest_framework.routers.APIRoot
         """
-        if callback.__module__ == 'rest_framework.routers':
-            return True
-
-        return False
+        return callback.__module__ == 'rest_framework.routers'
 
     def __exclude_format_endpoints__(self, path):
         """
         Excludes URL patterns that contain .{format}
         """
-        if '.{format}' in path:
-            return True
-
-        return False
+        return '.{format}' in path

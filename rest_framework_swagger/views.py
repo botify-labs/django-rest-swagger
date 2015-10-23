@@ -63,7 +63,10 @@ class Swagger2JSONView(BaseSwaggerView, APIView):
     def get(self, request, version, swagger_config_name=None):
         self.check_permission(request, swagger_config_name)
         paths = self.get_paths()
-        generator = DocumentationGenerator(for_user=request.user)
+        generator = DocumentationGenerator(
+            for_user=request.user,
+            config=self.config
+        )
         return Response(generator.get_root(paths))
 
     def get_paths(self):

@@ -1,7 +1,6 @@
 """Generates API documentation by introspection."""
 from django.contrib.auth.models import AnonymousUser
 import rest_framework
-import rest_framework_swagger as rfs
 
 from rest_framework import viewsets, mixins
 from rest_framework.generics import GenericAPIView
@@ -31,12 +30,13 @@ class DocumentationGenerator(object):
     # Response classes defined in docstrings
     explicit_response_types = dict()
 
-    def __init__(self, for_user=None):
+    def __init__(self, for_user=None, config=None):
+        self.config = config
         self.user = for_user or AnonymousUser()
 
     def get_root(self, endpoints_conf):
-        self.default_payload_definition_name = rfs.SWAGGER_SETTINGS.get("default_payload_definition_name", None)
-        self.default_payload_definition = rfs.SWAGGER_SETTINGS.get("default_payload_definition", None)
+        self.default_payload_definition_name = self.config.get("default_payload_definition_name", None)
+        self.default_payload_definition = self.config.get("default_payload_definition", None)
         if self.default_payload_definition:
             self.explicit_response_types.update({
                 self.default_payload_definition_name: self.default_payload_definition
@@ -44,13 +44,13 @@ class DocumentationGenerator(object):
 
         return {
             'swagger': '2.0',
-            'info': rfs.SWAGGER_SETTINGS.get('info', {
+            'info': self.config.get('info', {
                 'contact': '',
             }),
-            'basePath': rfs.SWAGGER_SETTINGS.get("api_path", ''),
+            'basePath': self.config.get("api_path", ''),
             'paths': self.get_paths(endpoints_conf),
             'definitions': self.get_definitions(endpoints_conf),
-            'securityDefinitions': rfs.SWAGGER_SETTINGS.get('securityDefinitions', {})
+            'securityDefinitions': self.config.get('securityDefinitions', {})
         }
 
     def get_paths(self, endpoints_conf):
@@ -100,7 +100,7 @@ class DocumentationGenerator(object):
                 'description': method_introspector.get_description(),
                 'summary': method_introspector.get_summary(),
                 'operationId': method_introspector.get_operation_id(),
-                'produces': doc_parser.get_param(param_name='produces', default=rfs.SWAGGER_SETTINGS.get('produces')),
+                'produces': doc_parser.get_param(param_name='produces', default=self.config.get('produces')),
                 'tags': doc_parser.get_param(param_name='tags', default=[]),
                 'parameters': self._get_operation_parameters(method_introspector)
             }
