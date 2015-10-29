@@ -211,8 +211,9 @@ class DocumentationGenerator(object):
             r_properties = OrderedDict((k, v) for k, v in data['fields'].items()
                                        if k not in data['write_only'])
 
+            required_properties = data.get("required", [])
             models[r_name] = {
-                'required': [i for i in r_properties.keys()],
+                'required': [i for i in r_properties.keys() if i in required_properties],
                 'properties': r_properties,
                 'type': 'object'
             }
