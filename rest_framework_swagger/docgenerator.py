@@ -407,7 +407,11 @@ class DocumentationGenerator(object):
 
             if isinstance(field, BaseSerializer) or has_many:
                 if hasattr(field, 'is_documented') and not field.is_documented:
-                    f['type'] = "object"
+                    if field.doc_field_type == "array-object":
+                        f['type'] == "array"
+                        f['items'] = {"type": "object"}
+                    else:
+                        f['type'] = field.doc_field_type
                 elif isinstance(field, BaseSerializer):
                     field_serializer = get_serializer_name(field)
 

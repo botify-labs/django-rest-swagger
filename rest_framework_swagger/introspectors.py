@@ -460,7 +460,11 @@ class BaseMethodIntrospector(object):
                     f['enum'] = [k for k, v in field.choices.items()]
 
             if hasattr(field, 'is_documented') and not field.is_documented:
-                f['type'] = "object"
+                if field.doc_field_type == "array-object":
+                    f['type'] == "array"
+                    f['items'] = {"type": "object"}
+                else:
+                    f['type'] = field.doc_field_type
 
             data.append(f)
 
