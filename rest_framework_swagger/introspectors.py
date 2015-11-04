@@ -262,16 +262,10 @@ class BaseMethodIntrospector(object):
             query_params.extend(
                 self.build_query_parameters_from_django_filters())
 
-        # if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
-        #     params += form_params
-
-        #     if not form_params and body_params is not None:
-        #         params.append(body_params)
-
         if query_params:
             params += query_params
 
-        if pagination_params:
+        if pagination_params and self.get_http_method() == "GET":
             params += pagination_params
 
         return params
@@ -361,7 +355,7 @@ class BaseMethodIntrospector(object):
                 'in': 'query',
                 'name': page,
                 'description': "Page Number",
-                'type': 'int'
+                'type': 'integer'
             }]
 
             if size:
@@ -369,7 +363,7 @@ class BaseMethodIntrospector(object):
                     'in': 'query',
                     'name': size,
                     'description': "Page Size",
-                    'type': 'int'
+                    'type': 'integer'
                 })
             return params
         return None

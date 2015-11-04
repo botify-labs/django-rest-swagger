@@ -8,7 +8,6 @@ from rest_framework.utils import formatting
 
 from .compat import OrderedDict
 from .utils import multi_getattr, normalize_data_format, get_serializer_name
-from .constants import INTROSPECTOR_PRIMITIVES
 
 
 class YAMLDocstringParser(object):
@@ -333,9 +332,6 @@ class YAMLDocstringParser(object):
                         serializer)
                 except (ImportError, ValueError):
                     pass
-            if param_type in ['path', 'query', 'header']:
-                if data_type not in INTROSPECTOR_PRIMITIVES:
-                    data_type = 'string'
 
             # Data Format
             data_format = field.get('format', None)
