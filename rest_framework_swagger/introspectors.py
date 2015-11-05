@@ -9,7 +9,7 @@ import logging
 from .compat import strip_tags, get_pagination_attribures
 from .yamlparser import YAMLDocstringParser
 from .constants import INTROSPECTOR_ENUMS, INTROSPECTOR_PRIMITIVES
-from .utils import (normalize_data_format, get_default_value, get_view_description,
+from .utils import (normalize_data_format, get_view_description,
                     do_markdown, get_serializer_name)
 from abc import ABCMeta, abstractmethod
 
@@ -254,8 +254,6 @@ class BaseMethodIntrospector(object):
         """
         params = []
         # path_params = self.build_path_parameters()
-        body_params = self.build_body_parameters()
-        form_params = self.build_form_parameters()
         query_params = self.build_query_parameters()
         pagination_params = self.build_pagination_parameters()
         if django_filters is not None:
@@ -393,77 +391,6 @@ class BaseMethodIntrospector(object):
 
         return params
 
-    def build_form_parameters(self):
-        """
-        Builds form parameters from the serializer class
-        """
-        data = []
-        serializer = self.get_request_serializer_class()
-
-        if serializer is None:
-            return data
-
-        fields = serializer().get_fields()
-
-        for name, field in fields.items():
-
-            if getattr(field, 'read_only', False):
-                continue
-
-            data_type, data_format = get_data_type(field) or ('string', 'string')
-            if data_type == 'hidden':
-                continue
-
-            # guess format
-            # data_format = 'string'
-            # if data_type in self.PRIMITIVES:
-                # data_format = self.PRIMITIVES.get(data_type)[0]
-
-            f = {
-                'in': 'formData',
-                'name': name,
-                'description': getattr(field, 'help_text', '') or '',
-                'type': data_type,
-                'format': data_format,
-                'required': getattr(field, 'required', False),
-                'defaultValue': get_default_value(field),
-            }
-
-            # Swagger type is a primitive, format is more specific
-            if f['type'] == f['format']:
-                del f['format']
-
-            # defaultValue of null is not allowed, it is specific to type
-            if f['defaultValue'] is None:
-                del f['defaultValue']
-
-            # Min/Max values
-            max_value = getattr(field, 'max_value', None)
-            min_value = getattr(field, 'min_value', None)
-            if max_value is not None and data_type == 'integer':
-                f['minimum'] = min_value
-
-            if max_value is not None and data_type == 'integer':
-                f['maximum'] = max_value
-
-            # ENUM options
-            if data_type in BaseMethodIntrospector.ENUMS:
-                if isinstance(field.choices, list):
-                    f['enum'] = [k for k, v in field.choices]
-                elif isinstance(field.choices, dict):
-                    f['enum'] = [k for k, v in field.choices.items()]
-
-            if hasattr(field, 'is_documented') and not field.is_documented:
-                if field.doc_field_type == "array-object":
-                    f['type'] == "array"
-                    f['items'] = {"type": "object"}
-                else:
-                    f['type'] = field.doc_field_type
-
-            data.append(f)
-
-        return data
-
 
 def get_data_type(field):
     # (in swagger 2.0 we might get to use the descriptive types..
@@ -472,6 +399,8 @@ def get_data_type(field):
     if isinstance(field, fields.BooleanField):
         return 'boolean', 'boolean'
     elif field.__class__.__name__ == "JSONField":
+        return 'object', 'object'
+    elif isinstance(field, fields.ModelField) and field.model_field.__class__.__name__ == "JSONField":
         return 'object', 'object'
     elif hasattr(fields, 'NullBooleanField') and isinstance(field, fields.NullBooleanField):
         return 'boolean', 'boolean'
