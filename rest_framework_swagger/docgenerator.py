@@ -14,10 +14,9 @@ from .introspectors import (
     ViewSetIntrospector,
     WrappedAPIViewIntrospector,
     get_data_type,
-    get_default_value,
 )
 from .compat import OrderedDict
-from .utils import extract_base_path, get_serializer_name
+from .utils import extract_base_path, get_serializer_name, get_default_value
 
 
 class DocumentationGenerator(object):
@@ -96,14 +95,16 @@ class DocumentationGenerator(object):
             response_type = self._get_method_response_type(
                 doc_parser, serializer, introspector, method_introspector)
 
+            operation_method = method_introspector.get_http_method()
+
             operation = {
-                'method': method_introspector.get_http_method(),
+                'method': operation_method,
                 'description': method_introspector.get_description(),
                 'summary': method_introspector.get_summary(),
                 'operationId': method_introspector.get_operation_id(),
                 'produces': doc_parser.get_param(param_name='produces', default=self.config.get('produces')),
                 'tags': doc_parser.get_param(param_name='tags', default=[]),
-                'parameters': self._get_operation_parameters(method_introspector)
+                'parameters': self._get_operation_parameters(method_introspector, operation_method)
             }
 
             if doc_parser.yaml_error is not None:
@@ -137,7 +138,7 @@ class DocumentationGenerator(object):
 
         return operations
 
-    def _get_operation_parameters(self, introspector):
+    def _get_operation_parameters(self, introspector, method):
         """
         :param introspector: method introspector
         :return : if the serializer must be placed in the body, it will build
@@ -146,7 +147,7 @@ class DocumentationGenerator(object):
         """
         serializer = introspector.get_request_serializer_class()
         parameters = []
-        if hasattr(serializer, "_in") and serializer._in == "body":
+        if method in ('POST', 'PUT', 'PATCH') and hasattr(serializer, "_in") and serializer._in == "body":
             self.explicit_serializers.add(serializer)
             parameters.append(introspector.build_body_parameters())
 
@@ -354,6 +355,7 @@ class DocumentationGenerator(object):
                 data['required'].append(name)
 
             data_type, data_format = get_data_type(field) or ('string', 'string')
+
             if data_type == 'hidden':
                 continue
 
