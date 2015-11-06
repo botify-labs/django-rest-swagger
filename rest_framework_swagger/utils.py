@@ -15,6 +15,9 @@ def get_serializer_name(serializer):
             if isinstance(serializer, ListSerializer):
                 serializer = serializer.child
 
+        if hasattr(serializer, 'Meta') and hasattr(serializer.Meta, 'swagger_name') and serializer.Meta.swagger_name:
+            return serializer.Meta.swagger_name
+
         if inspect.isclass(serializer):
             return serializer.__name__
 

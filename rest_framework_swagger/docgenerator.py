@@ -147,7 +147,8 @@ class DocumentationGenerator(object):
         """
         serializer = introspector.get_request_serializer_class()
         parameters = []
-        if method in ('POST', 'PUT', 'PATCH') and hasattr(serializer, "_in") and serializer._in == "body":
+        if (method in ('POST', 'PUT', 'PATCH') and hasattr(serializer, "Meta")
+           and hasattr(serializer.Meta, "_in") and serializer.Meta._in == "body"):
             self.explicit_serializers.add(serializer)
             parameters.append(introspector.build_body_parameters())
 
