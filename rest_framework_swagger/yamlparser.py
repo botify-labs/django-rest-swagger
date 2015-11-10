@@ -345,12 +345,11 @@ class YAMLDocstringParser(object):
 
             normalize_data_format(data_type, data_format, f)
 
+            if field.get('collectionFormat', None):
+                f['collectionFormat'] = field.get('collectionFormat', False)
+
             if field.get('default', None) is not None:
                 f['default'] = field.get('default', None)
-
-            # Allow Multiple Values &f=1,2,3,4
-            if field.get('allowMultiple'):
-                f['allowMultiple'] = True
 
             if f['type'] == 'array':
                 items = field.get('items', {})
@@ -372,9 +371,10 @@ class YAMLDocstringParser(object):
                 f['maximum'] = str(field.get('maximum', 0))
 
             # enum options
-            enum = field.get('enum', [])
-            if enum:
-                f['enum'] = enum
+            # @TODO apimatic doesn't use enum for querystrings
+            # enum = field.get('enum', [])
+            # if enum:
+            #     f['enum'] = enum
 
             # File support
             if f['type'] == 'file':

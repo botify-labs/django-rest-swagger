@@ -29,9 +29,10 @@ class DocumentationGenerator(object):
     # Response classes defined in docstrings
     explicit_response_types = dict()
 
-    def __init__(self, for_user=None, config=None):
+    def __init__(self, for_user=None, config=None, request=None):
         self.config = config
         self.user = for_user or AnonymousUser()
+        self.request = request
 
     def get_root(self, endpoints_conf):
         self.default_payload_definition_name = self.config.get("default_payload_definition_name", None)
@@ -40,13 +41,16 @@ class DocumentationGenerator(object):
             self.explicit_response_types.update({
                 self.default_payload_definition_name: self.default_payload_definition
             })
-
         return {
             'swagger': '2.0',
             'info': self.config.get('info', {
                 'contact': '',
             }),
-            'basePath': self.config.get("api_path", ''),
+            'basePath': self.config.get("basePath", '').format(
+                version=self.request.parser_context['kwargs']['version']
+            ),
+            'host': self.config.get('host', ''),
+            'schemes': self.config.get('schemes', ''),
             'paths': self.get_paths(endpoints_conf),
             'definitions': self.get_definitions(endpoints_conf),
             'securityDefinitions': self.config.get('securityDefinitions', {})

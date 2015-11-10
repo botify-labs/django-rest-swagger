@@ -65,7 +65,8 @@ class Swagger2JSONView(BaseSwaggerView, APIView):
         paths = self.get_paths()
         generator = DocumentationGenerator(
             for_user=request.user,
-            config=self.config
+            config=self.config,
+            request=request
         )
         return Response(generator.get_root(paths))
 
