@@ -394,7 +394,6 @@ class BaseMethodIntrospector(object):
 
 def get_data_type(field):
     # (in swagger 2.0 we might get to use the descriptive types..
-
     from rest_framework import fields
     if isinstance(field, fields.BooleanField):
         return 'boolean', 'boolean'
@@ -402,6 +401,10 @@ def get_data_type(field):
         return 'object', 'object'
     elif isinstance(field, fields.ModelField) and field.model_field.__class__.__name__ == "JSONField":
         return 'object', 'object'
+    elif isinstance(field, fields.DictField):
+        return 'object', 'object'
+    elif isinstance(field, fields.ListField):
+        return 'array', "array"
     elif hasattr(fields, 'NullBooleanField') and isinstance(field, fields.NullBooleanField):
         return 'boolean', 'boolean'
     # elif isinstance(field, fields.URLField):

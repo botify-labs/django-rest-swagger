@@ -5,7 +5,7 @@ import rest_framework
 from rest_framework import viewsets, mixins
 from rest_framework.generics import GenericAPIView
 
-from rest_framework.serializers import BaseSerializer
+from rest_framework.serializers import BaseSerializer, ListField
 
 from .introspectors import (
     APIViewIntrospector,
@@ -438,6 +438,12 @@ class DocumentationGenerator(object):
                         f['items'] = {'$ref': '#/definitions/' + field_serializer}
                     elif data_type in BaseMethodIntrospector.PRIMITIVES:
                         f['items'] = {'type': data_type}
+            elif isinstance(field, ListField):
+                f['type'] = 'array'
+                if not field.child:
+                    f['items'] = {'type': 'string'}
+                child_type, child_format = get_data_type(field.child) or ('string', 'string')
+                f['items'] = {'type': child_type}
 
             # memorize discovered field
             data['fields'][name] = f
