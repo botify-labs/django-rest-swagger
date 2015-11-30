@@ -201,34 +201,48 @@ class DocumentationGenerator(object):
         models = {}
 
         for serializer in serializers:
-            data = self._get_serializer_fields(serializer)
-
-            # Register 2 models with different subset of properties suitable
-            # for data reading and writing.
-            # i.e. rest framework does not output write_only fields in response
-            # or require read_only fields in complex input.
-
             serializer_name = get_serializer_name(serializer)
 
-            # Reading
-            # no write_only fields
-            r_name = serializer_name
+            if hasattr(serializer, "Meta") and hasattr(serializer.Meta, "child"):
+                child_serializer = serializer.Meta.child
+                child_serializer_name = get_serializer_name(child_serializer)
+                models[child_serializer_name] = self.get_definition(child_serializer)
 
-            r_properties = OrderedDict((k, v) for k, v in data['fields'].items()
-                                       if k not in data['write_only'])
-
-            required_properties = data.get("required", [])
-            models[r_name] = {
-                'required': [i for i in r_properties.keys() if i in required_properties],
-                'properties': r_properties,
-                'type': 'object'
-            }
-            if len(models[r_name]['required']) == 0:
-                del models[r_name]['required']
+            models[serializer_name] = self.get_definition(serializer)
 
         models.update(self.explicit_response_types)
         models.update(self.fields_serializers)
         return models
+
+    def get_definition(self, serializer):
+        """
+        :param serializer: Serializer to describe
+        :type serializer: serializer instance
+        """
+        data = self._get_serializer_fields(serializer)
+        serializer_type = "object"
+        properties = OrderedDict((k, v) for k, v in data['fields'].items()
+                                 if k not in data['write_only'])
+
+        if hasattr(serializer, "Meta") and hasattr(serializer.Meta, "child"):
+            return {
+                'type': 'array',
+                'items': {
+                    '$ref': '#/definitions/{}'.format(
+                        get_serializer_name(serializer.Meta.child)
+                    )
+                }
+            }
+
+        definition = {
+            'properties': properties,
+            'type': serializer_type
+        }
+        required_properties = [i for i in properties.keys() if i in data.get("required", [])]
+        if required_properties:
+            definition['required'] = required_properties
+
+        return definition
 
     def _get_serializer_set(self, endpoints_conf):
         """
