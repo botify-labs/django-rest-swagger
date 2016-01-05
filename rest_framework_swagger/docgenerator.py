@@ -96,9 +96,6 @@ class DocumentationGenerator(object):
 
             serializer = self._get_method_serializer(method_introspector)
 
-            response_type = self._get_method_response_type(
-                doc_parser, serializer, introspector, method_introspector)
-
             operation_method = method_introspector.get_http_method()
 
             operation = {
@@ -125,22 +122,43 @@ class DocumentationGenerator(object):
                     }
                 }
 
+            # write the default "success" responses
+            success_code, success_body = self._get_operation_success_response(
+                doc_parser, serializer, introspector, method_introspector
+            )
+            response_messages[success_code] = success_body
+
             # overwrite default and add more responses from docstrings
             response_messages.update(doc_parser.get_response_messages())
 
-            response_messages['200'] = {
-                'description': 'Successful operation',
-                'schema': {
-                    '$ref': '#/definitions/' + response_type
-                } if response_type != 'object' else {
-                    'type': response_type
-                }
-            }
             operation['responses'] = response_messages
 
             operations.append(operation)
 
         return operations
+
+    def _get_operation_success_response(self, doc_parser, serializer, introspector, method_introspector):
+        response_type = self._get_method_response_type(doc_parser, serializer, introspector, method_introspector)
+        operation_method = method_introspector.get_http_method().lower()
+
+        success_code = "200"
+
+        if operation_method == "delete":
+            return ("204", {"description": "Deleted"})
+
+        if operation_method == "post":
+            success_code = "201"
+
+        success_body = {
+            'description': 'Successful operation',
+            'schema': {
+                '$ref': '#/definitions/' + response_type
+            } if response_type != 'object' else {
+                'type': response_type
+            }
+        }
+
+        return (success_code, success_body)
 
     def _get_operation_parameters(self, introspector, method):
         """
