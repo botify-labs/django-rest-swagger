@@ -66,6 +66,7 @@ class Swagger2JSONView(BaseSwaggerView, APIView):
         generator = DocumentationGenerator(
             for_user=request.user,
             config=self.config,
+            config_name=swagger_config_name,
             request=request
         )
         return Response(generator.get_root(paths))

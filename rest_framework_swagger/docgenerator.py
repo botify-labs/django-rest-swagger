@@ -29,8 +29,9 @@ class DocumentationGenerator(object):
     # Response classes defined in docstrings
     explicit_response_types = dict()
 
-    def __init__(self, for_user=None, config=None, request=None):
+    def __init__(self, for_user=None, config=None, request=None, config_name=None):
         self.config = config
+        self.config_name = config_name
         self.user = for_user or AnonymousUser()
         self.request = request
 
@@ -61,7 +62,10 @@ class DocumentationGenerator(object):
         for endpoint in endpoints_conf:
             # remove the base_path from the begining of the path
             endpoint['path'] = extract_base_path(path=endpoint['path'], base_path=self.config.get('basePath'))
-            paths_dict[endpoint['path']] = self.get_path_item(endpoint)
+            path_item = self.get_path_item(endpoint)
+            if path_item:
+                paths_dict[endpoint['path']] = path_item
+
         paths_dict = OrderedDict(sorted(paths_dict.items()))
         return paths_dict
 
@@ -72,6 +76,8 @@ class DocumentationGenerator(object):
 
         for operation in self.get_operations(api_endpoint, introspector):
             path_item[operation.pop('method').lower()] = operation
+        if not path_item:
+            return False
 
         method_introspectors = self.get_method_introspectors(api_endpoint, introspector)
         # we get the main parameters (common to all operations) from the first view operation
@@ -93,6 +99,10 @@ class DocumentationGenerator(object):
 
         for method_introspector in self.get_method_introspectors(api_endpoint, introspector):
             doc_parser = method_introspector.get_yaml_parser()
+            # check if operation is allowed on the current swagger config name
+            operation_config_name = doc_parser.get_param(param_name='swagger_config_name', default=False)
+            if operation_config_name and operation_config_name != self.config_name:
+                continue
 
             serializer = self._get_method_serializer(method_introspector)
 
