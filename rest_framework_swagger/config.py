@@ -7,6 +7,7 @@ class SwaggerConfig(object):
         'exclude_namespaces': [],
         'exclude_module_paths': [],
         'exclude_url_patterns': [],
+        'exclude_url_patterns_names': [],
         'include_module_paths': [],
         'is_authenticated': False,
         'is_superuser': False,

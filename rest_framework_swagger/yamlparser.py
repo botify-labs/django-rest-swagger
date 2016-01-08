@@ -299,7 +299,7 @@ class YAMLDocstringParser(object):
             schema = message.get('schema', None)
             if schema:
                 data['schema'] = schema
-            messages[message.get('code')] = data
+            messages[str(message.get('code'))] = data
         return messages
 
     def get_view_mocker(self, callback):

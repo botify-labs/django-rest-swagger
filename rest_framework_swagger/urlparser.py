@@ -13,6 +13,7 @@ class UrlParser(object):
         self.exclude_module_paths = config.get('exclude_module_paths', [])
         self.include_module_paths = config.get('include_module_paths', [])
         self.exclude_url_patterns = config.get('exclude_url_patterns', [])
+        self.exclude_url_patterns_names = config.get('exclude_url_patterns_names', [])
 
     def get_apis(self):
         """
@@ -63,6 +64,9 @@ class UrlParser(object):
                     continue
 
                 if any(excluded in endpoint_data['path'] for excluded in self.exclude_url_patterns):
+                    continue
+
+                if endpoint_data['pattern'].name in self.exclude_url_patterns_names:
                     continue
 
                 pattern_list.append(endpoint_data)
